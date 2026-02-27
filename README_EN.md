@@ -2,13 +2,13 @@
 
 English | [简体中文](README.md)
 
-> 🚀 High-performance Windows Graphics Capture for Python - 256+ FPS window capture with double-buffered staging texture
+> 🚀 High-performance Windows Graphics Capture for Python - 180+ FPS window capture with double-buffered staging texture
 
 High-performance Windows Graphics Capture (WGC) Python module.
 
 ## Features
 
-- High FPS continuous window capture (256+ FPS)
+- High FPS continuous window capture (180+ FPS)
 - Double-buffered staging texture async read
 - Clean Python API
 - Support for single screenshot, Base64 encoding
@@ -92,7 +92,7 @@ from wgc_python import *
 import numpy as np
 import cv2
 
-if start_capture("Game Window", "UnityWndClass"):
+if start_capture("Window Title", "WindowClass"):
     while True:
         result = get_frame()
         if result:
@@ -170,7 +170,7 @@ python test_api.py
 
 | Scenario | FPS |
 |----------|-----|
-| Game window (dynamic) | 256+ |
+| Game window (dynamic) | 180+ |
 | Static window | 1-2 (WGC auto-skips unchanged frames) |
 
 ## Technical Architecture
