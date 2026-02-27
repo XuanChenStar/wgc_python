@@ -2,13 +2,13 @@
 
 [English](README_EN.md) | 简体中文
 
-> 🚀 高性能 Windows Graphics Capture Python 模块 - 256+ FPS 窗口捕获，双缓冲 Staging 纹理
+> 🚀 高性能 Windows Graphics Capture Python 模块 - 180+ FPS 窗口捕获，双缓冲 Staging 纹理
 
 高性能 Windows Graphics Capture (WGC) Python 模块。
 
 ## 功能
 
-- 高帧率连续窗口捕获 (256+ FPS)
+- 高帧率连续窗口捕获 (180+ FPS)
 - 双缓冲 Staging 纹理异步读取
 - 简洁的 Python API
 - 支持单张截图、Base64编码
@@ -92,7 +92,7 @@ from wgc_python import *
 import numpy as np
 import cv2
 
-if start_capture("崩坏3", "UnityWndClass"):
+if start_capture("窗口标题", "窗口类名"):
     while True:
         result = get_frame()
         if result:
