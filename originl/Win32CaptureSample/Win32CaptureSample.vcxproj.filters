@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="App.cpp" />
+    <ClCompile Include="SimpleCapture.cpp" />
+    <ClCompile Include="SampleWindow.cpp" />
+    <ClCompile Include="CaptureSnapshot.cpp" />
+    <ClCompile Include="WindowList.cpp" />
+    <ClCompile Include="MonitorList.cpp" />
+    <ClCompile Include="DirtyRegionVisualizer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="App.h" />
+    <ClInclude Include="SimpleCapture.h" />
+    <ClInclude Include="SampleWindow.h" />
+    <ClInclude Include="CaptureSnapshot.h" />
+    <ClInclude Include="WindowList.h" />
+    <ClInclude Include="MonitorList.h" />
+    <ClInclude Include="DirtyRegionVisualizer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="app.manifest" />
+  </ItemGroup>
+</Project>

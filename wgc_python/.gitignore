@@ -1,0 +1,41 @@
+# Visual Studio
+wgc_python_dll/.vs/
+
+# NuGet packages
+wgc_python_dll/packages/
+
+# Build output
+wgc_python_dll/x64/
+wgc_python_dll/wgc_python_dll/x64/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Test outputs
+screenshot.png
+test_save.png
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
