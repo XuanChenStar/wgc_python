@@ -25,6 +25,11 @@ public:
     
     bool IsCapturing() const { return m_isCapturing; }
     int GetFrameCount() const { return m_frameCount.load(); }
+    
+    // 新增：暂停/恢复捕获
+    void PauseCapture();
+    void ResumeCapture();
+    bool IsPaused() const { return m_isPaused; }
 
     winrt::com_ptr<ID3D11Device> m_d3dDevice;
 
@@ -48,7 +53,7 @@ private:
     
     std::atomic<int> m_frameCount{0};
     bool m_isCapturing = false;
-    winrt::event_token m_frameArrivedToken;
+    bool m_isPaused = false; // 新增：暂停状态
     
     bool CreateTextures(UINT width, UINT height);
 };

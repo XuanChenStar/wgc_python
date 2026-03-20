@@ -47,6 +47,15 @@ class _WGCDLL:
         self._dll.GetFrameCount.argtypes = []
         self._dll.GetFrameCount.restype = ctypes.c_int
 
+        self._dll.PauseCapture.argtypes = []
+        self._dll.PauseCapture.restype = None
+
+        self._dll.ResumeCapture.argtypes = []
+        self._dll.ResumeCapture.restype = None
+
+        self._dll.IsPaused.argtypes = []
+        self._dll.IsPaused.restype = ctypes.c_int
+
         self._dll.GetLastErrorMsg.restype = ctypes.c_char_p
 
 _dll = _WGCDLL()
@@ -118,6 +127,18 @@ def get_last_error() -> str:
     msg = _dll._dll.GetLastErrorMsg()
     return msg.decode('utf-8') if msg else ""
 
+def pause_capture():
+    """暂停捕获"""
+    _dll._dll.PauseCapture()
+
+def resume_capture():
+    """恢复捕获"""
+    _dll._dll.ResumeCapture()
+
+def is_paused() -> bool:
+    """是否已暂停捕获"""
+    return _dll._dll.IsPaused() != 0
+
 
 __all__ = [
     'enumerate_windows',
@@ -126,5 +147,8 @@ __all__ = [
     'stop_capture',
     'is_capturing',
     'get_frame_count',
-    'get_last_error'
+    'get_last_error',
+    'pause_capture',
+    'resume_capture',
+    'is_paused'
 ]

@@ -231,3 +231,22 @@ WGC_API int GetFrameCount()
     std::lock_guard<std::mutex> lock(g_captureMutex);
     return g_capture ? g_capture->GetFrameCount() : 0;
 }
+
+// 新增：暂停/恢复捕获
+WGC_API void PauseCapture()
+{
+    std::lock_guard<std::mutex> lock(g_captureMutex);
+    if (g_capture) g_capture->PauseCapture();
+}
+
+WGC_API void ResumeCapture()
+{
+    std::lock_guard<std::mutex> lock(g_captureMutex);
+    if (g_capture) g_capture->ResumeCapture();
+}
+
+WGC_API int IsPaused()
+{
+    std::lock_guard<std::mutex> lock(g_captureMutex);
+    return (g_capture && g_capture->IsPaused()) ? 1 : 0;
+}

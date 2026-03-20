@@ -145,6 +145,47 @@ def test_capture_status(title: str, class_name: str):
     
     print(f"捕获后: is_capturing() = {is_capturing()}")
 
+def test_pause_resume(title: str, class_name: str):
+    """测试暂停/恢复功能"""
+    print("\n" + "=" * 50)
+    print("测试: 暂停/恢复功能")
+    print("=" * 50)
+    
+    if not start_capture(title, class_name):
+        print(f"启动捕获失败: {get_last_error()}")
+        return
+    
+    print(f"捕获已启动: {title}")
+    print(f"初始状态 - is_capturing: {is_capturing()}, is_paused: {is_paused()}")
+    
+    # 测试获取帧
+    result = get_frame()
+    print(f"获取帧: {'成功' if result else '失败'}")
+    
+    # 测试暂停
+    pause_capture()
+    print(f"暂停后 - is_paused: {is_paused()}")
+    
+    # 测试暂停时获取帧（应该失败）
+    result = get_frame()
+    print(f"暂停时获取帧: {'成功' if result else '失败'}")
+    
+    # 测试恢复
+    resume_capture()
+    print(f"恢复后 - is_paused: {is_paused()}")
+    
+    # 测试恢复后获取帧
+    result = None
+    for _ in range(10):
+        result = get_frame()
+        if result:
+            break
+        time.sleep(0.1)
+    print(f"恢复后获取帧: {'成功' if result else '失败'}")
+    
+    stop_capture()
+    print(f"停止后 - is_capturing: {is_capturing()}, is_paused: {is_paused()}")
+
 def main():
     test_enumerate_windows()
 
@@ -159,6 +200,7 @@ def main():
     test_single_capture(target_title, target_class, screenshot_path)
     test_base64_encode(target_title, target_class)
     test_capture_status(target_title, target_class)
+    test_pause_resume(target_title, target_class)
     test_frame_count(target_title, target_class, duration=3.0)
     
     print("\n" + "=" * 50)

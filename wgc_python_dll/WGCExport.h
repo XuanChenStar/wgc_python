@@ -22,6 +22,11 @@ WGC_API void StopContinuousCapture();
 WGC_API int IsCapturing();
 WGC_API int GetFrameCount();
 
+// 暂停/恢复捕获
+WGC_API void PauseCapture();
+WGC_API void ResumeCapture();
+WGC_API int IsPaused();
+
 // 错误信息
 WGC_API const char* GetLastErrorMsg();
 

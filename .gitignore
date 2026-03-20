@@ -39,3 +39,7 @@ test_save.png
 .vscode/
 *.swp
 *.swo
+.trae/
+.vs/
+# Original sample code
+originl/

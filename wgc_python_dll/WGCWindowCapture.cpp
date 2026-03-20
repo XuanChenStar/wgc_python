@@ -12,8 +12,7 @@ namespace
     }
 }
 
-WGCWindowCapture::WGCWindowCapture()
-    : m_initialized(false)
+WGCWindowCapture::WGCWindowCapture() : m_initialized(false)
 {
 }
 
@@ -29,61 +28,49 @@ bool WGCWindowCapture::Initialize(std::string* outError)
         if (outError) *outError = msg;
     };
 
-    if (m_initialized)
-    {
+    if (m_initialized) {
         return true;
     }
 
-    try
-    {
+    try {
         auto d3dDevice = util::CreateD3D11Device();
-        if (!d3dDevice)
-        {
+        if (!d3dDevice) {
             setError("Failed to create D3D11 device");
             return false;
         }
 
         auto dxgiDevice = d3dDevice.as<IDXGIDevice>();
-        if (!dxgiDevice)
-        {
+        if (!dxgiDevice) {
             setError("Failed to get DXGI device");
             return false;
         }
 
         m_device = CreateDirect3DDevice(dxgiDevice.get());
-        if (!m_device)
-        {
+        if (!m_device) {
             setError("Failed to create Direct3D device");
             return false;
         }
 
         m_d3dDevice = GetDXGIInterfaceFromObject<ID3D11Device>(m_device);
-        if (!m_d3dDevice)
-        {
+        if (!m_d3dDevice) {
             setError("Failed to get D3D11 device interface");
             return false;
         }
 
         m_d3dDevice->GetImmediateContext(m_d3dContext.put());
-        if (!m_d3dContext)
-        {
+        if (!m_d3dContext) {
             setError("Failed to get device context");
             return false;
         }
 
         m_initialized = true;
         return true;
-    }
-    catch (const winrt::hresult_error& e)
-    {
+    } catch (const winrt::hresult_error& e) {
         std::stringstream ss;
-        ss << "WinRT error: " << winrt::to_string(e.message()) 
-           << " (HRESULT: " << HResultToString(e.code()) << ")";
+        ss << "WinRT error: " << winrt::to_string(e.message()) << " (HRESULT: " << HResultToString(e.code()) << ")";
         setError(ss.str());
         return false;
-    }
-    catch (...)
-    {
+    } catch (...) {
         setError("Unknown exception during initialization");
         return false;
     }
@@ -113,8 +100,7 @@ bool WGCWindowCapture::CreateTextures(UINT width, UINT height)
     desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
     desc.MiscFlags = 0;
 
-    for (int i = 0; i < 2; i++)
-    {
+    for (int i = 0; i < 2; i++) {
         HRESULT hr = m_d3dDevice->CreateTexture2D(&desc, nullptr, m_stagingTextures[i].put());
         if (FAILED(hr)) return false;
     }
@@ -133,35 +119,29 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, std::string* outError)
         if (outError) *outError = msg;
     };
 
-    if (!m_initialized)
-    {
+    if (!m_initialized) {
         setError("Not initialized");
         return false;
     }
 
-    if (m_isCapturing)
-    {
+    if (m_isCapturing) {
         StopContinuousCapture();
     }
 
-    try
-    {
+    try {
         m_captureItem = util::CreateCaptureItemForWindow(hwnd);
-        if (!m_captureItem)
-        {
+        if (!m_captureItem) {
             setError("Failed to create capture item");
             return false;
         }
 
         auto size = m_captureItem.Size();
-        if (size.Width <= 0 || size.Height <= 0)
-        {
+        if (size.Width <= 0 || size.Height <= 0) {
             setError("Invalid window size");
             return false;
         }
 
-        if (!CreateTextures(size.Width, size.Height))
-        {
+        if (!CreateTextures(size.Width, size.Height)) {
             setError("Failed to create textures");
             return false;
         }
@@ -172,44 +152,36 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, std::string* outError)
             2,
             size);
         
-        if (!m_framePool)
-        {
+        if (!m_framePool) {
             setError("Failed to create frame pool");
             return false;
         }
 
         m_session = m_framePool.CreateCaptureSession(m_captureItem);
-        if (!m_session)
-        {
+        if (!m_session) {
             setError("Failed to create capture session");
             m_framePool.Close();
             m_framePool = nullptr;
             return false;
         }
 
-        m_frameArrivedToken = m_framePool.FrameArrived(
-            [this](winrt::Direct3D11CaptureFramePool const& sender, winrt::IInspectable const&)
-        {
-            winrt::Direct3D11CaptureFrame frame = nullptr;
-            
-            frame = sender.TryGetNextFrame();
+        m_framePool.FrameArrived([this](winrt::Direct3D11CaptureFramePool const& sender, winrt::IInspectable const&) {
+            winrt::Direct3D11CaptureFrame frame = sender.TryGetNextFrame();
             if (!frame) return;
 
             winrt::IDirect3DSurface surface = frame.Surface();
             if (!surface) return;
 
-            winrt::com_ptr<ID3D11Texture2D> surfaceTexture = 
-                GetDXGIInterfaceFromObject<ID3D11Texture2D>(surface);
+            winrt::com_ptr<ID3D11Texture2D> surfaceTexture = GetDXGIInterfaceFromObject<ID3D11Texture2D>(surface);
             if (!surfaceTexture) return;
 
             std::lock_guard<std::mutex> lock(m_frameMutex);
             
+            if (m_isPaused) return;
+            
             int idx = m_currentStagingIndex;
-            if (m_stagingTextures[idx])
-            {
-                m_d3dContext->CopyResource(
-                    m_stagingTextures[idx].get(), 
-                    surfaceTexture.get());
+            if (m_stagingTextures[idx]) {
+                m_d3dContext->CopyResource(m_stagingTextures[idx].get(), surfaceTexture.get());
                 m_readableStagingIndex = idx;
                 m_currentStagingIndex = 1 - idx;
             }
@@ -219,21 +191,38 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, std::string* outError)
 
         m_session.StartCapture();
         m_isCapturing = true;
+        m_isPaused = false;
         return true;
-    }
-    catch (const winrt::hresult_error& e)
-    {
+    } catch (const winrt::hresult_error& e) {
         std::stringstream ss;
-        ss << "Start capture failed: " << winrt::to_string(e.message()) 
-           << " (HRESULT: " << HResultToString(e.code()) << ")";
+        ss << "Start capture failed: " << winrt::to_string(e.message()) << " (HRESULT: " << HResultToString(e.code()) << ")";
         setError(ss.str());
         return false;
-    }
-    catch (...)
-    {
+    } catch (...) {
         setError("Unknown exception");
         return false;
     }
+}
+
+void WGCWindowCapture::PauseCapture()
+{
+    if (!m_isCapturing) return;
+
+    std::lock_guard<std::mutex> lock(m_frameMutex);
+    if (m_isPaused) return;
+
+    m_isPaused = true;
+    m_readableStagingIndex = -1;
+}
+
+void WGCWindowCapture::ResumeCapture()
+{
+    if (!m_isCapturing) return;
+
+    std::lock_guard<std::mutex> lock(m_frameMutex);
+    if (!m_isPaused) return;
+
+    m_isPaused = false;
 }
 
 void WGCWindowCapture::StopContinuousCapture()
@@ -241,40 +230,37 @@ void WGCWindowCapture::StopContinuousCapture()
     if (!m_isCapturing) return;
 
     m_isCapturing = false;
+    m_isPaused = false;
 
-    if (m_session)
-    {
+    if (m_session) {
         try { m_session.Close(); } catch (...) {}
         m_session = nullptr;
     }
 
-    if (m_framePool)
-    {
+    if (m_framePool) {
         try { m_framePool.Close(); } catch (...) {}
         m_framePool = nullptr;
     }
 
     m_captureItem = nullptr;
 
-    {
-        std::lock_guard<std::mutex> lock(m_frameMutex);
-        for (int i = 0; i < 2; i++)
-        {
-            m_stagingTextures[i] = nullptr;
-        }
-        m_textureWidth = 0;
-        m_textureHeight = 0;
-        m_currentStagingIndex = 0;
-        m_readableStagingIndex = -1;
+    std::lock_guard<std::mutex> lock(m_frameMutex);
+    for (int i = 0; i < 2; i++) {
+        m_stagingTextures[i] = nullptr;
     }
+    m_textureWidth = 0;
+    m_textureHeight = 0;
+    m_currentStagingIndex = 0;
+    m_readableStagingIndex = -1;
 }
 
 bool WGCWindowCapture::TryGetFrame(unsigned char** outData, int* outWidth, int* outHeight)
 {
+    if (m_isPaused) return false;
+    
     std::lock_guard<std::mutex> lock(m_frameMutex);
     
-    if (m_readableStagingIndex < 0 || !m_stagingTextures[m_readableStagingIndex])
-    {
+    if (m_readableStagingIndex < 0 || !m_stagingTextures[m_readableStagingIndex]) {
         return false;
     }
 
@@ -287,15 +273,13 @@ bool WGCWindowCapture::TryGetFrame(unsigned char** outData, int* outWidth, int* 
     size_t dataSize = m_textureWidth * m_textureHeight * 4;
 
     *outData = static_cast<unsigned char*>(CoTaskMemAlloc(dataSize));
-    if (!*outData)
-    {
+    if (!*outData) {
         m_d3dContext->Unmap(stagingTexture.get(), 0);
         return false;
     }
 
     size_t rowPitch = mapped.RowPitch;
-    for (int y = 0; y < m_textureHeight; y++)
-    {
+    for (int y = 0; y < m_textureHeight; y++) {
         unsigned char* src = static_cast<unsigned char*>(mapped.pData) + y * rowPitch;
         unsigned char* dst = *outData + y * m_textureWidth * 4;
         memcpy(dst, src, m_textureWidth * 4);

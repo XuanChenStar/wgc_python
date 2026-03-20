@@ -58,6 +58,9 @@ from wgc_python import (
     is_capturing,         # 是否捕获中
     get_frame_count,      # 帧计数
     get_last_error,       # 错误信息
+    pause_capture,        # 暂停捕获
+    resume_capture,       # 恢复捕获
+    is_paused,            # 是否已暂停
 )
 ```
 
