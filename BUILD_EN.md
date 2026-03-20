@@ -5,13 +5,14 @@ English | [简体中文](BUILD.md)
 ## Project Structure
 
 ```
-wgc-python/
+wgc_python/
 ├── wgc_python.py            # Python API
 ├── test.py                  # Test script
+├── test_api.py              # API function test
 ├── requirements.txt         # Python dependencies
 ├── wgc_python.dll           # Compiled DLL (copy to this directory)
 └── wgc_python_dll/          # C++ DLL source
-    ├── WGCWindowCapture.h/cpp   # Core capture class (double-buffered staging texture)
+    ├── WGCWindowCapture.h/cpp   # Core capture class (double-buffered staging texture + Pause/Resume)
     ├── WGCExport.h/cpp          # DLL export interface
     ├── D3DInterop.cpp           # D3D11 interop
     ├── WindowEnumerator.h/cpp   # Window enumeration
@@ -35,7 +36,7 @@ wgc-python/
 1. Open `wgc_python_dll/wgc_python_dll.sln`
 2. Configuration: `Release` | `x64`
 3. Right-click project → Build
-4. Copy DLL to `wgc-python/` directory
+4. Copy DLL to `wgc_python/` directory
 
 ### Method 2: Command Line (MSBuild)
 
@@ -62,6 +63,7 @@ pip install numpy opencv-python
 
 # Run test
 python test.py
+python test_api.py
 ```
 
 ## DLL Export Functions
@@ -76,6 +78,9 @@ python test.py
 | `IsCapturing` | Is currently capturing |
 | `GetFrameCount` | Captured frame count |
 | `GetLastErrorMsg` | Get error message |
+| `PauseCapture` | Pause capture (zero-resource standby) |
+| `ResumeCapture` | Resume capture |
+| `IsPaused` | Is paused |
 
 ## Technical Architecture
 
@@ -91,8 +96,30 @@ WGC Capture → GPU Surface Texture
                   ↓
              Map/Unmap (CPU on-demand read)
                   ↓
-             Python Display
+             Python numpy array
 ```
+
+### Pause/Resume Mechanism
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    FrameArrived Callback             │
+├─────────────────────────────────────────────────────┤
+│  if (m_isPaused) return;  // Skip when paused        │
+│                                                      │
+│  // Normal processing: GPU → CPU copy               │
+│  CopyResource(stagingTexture, surfaceTexture);      │
+└─────────────────────────────────────────────────────┘
+         ↑                              ↑
+    On Resume                      On Pause
+  m_isPaused = false           m_isPaused = true
+  Start processing              Skip all frame processing
+```
+
+**Core Advantages:**
+- When paused: GPU stops copying, CPU usage drops to zero
+- When resumed: <1ms latency, no re-initialization needed
+- Session reuse: Avoids 50ms+ overhead of frequent start/stop
 
 ## Common Issues
 
@@ -109,3 +136,7 @@ Ensure `wgc_python.dll` is in the same directory as `wgc_python.py`.
 1. Ensure target window is visible
 2. Ensure window title/class name is correct
 3. Check error message from `get_last_error()`
+
+### Pause/Resume Not Working
+
+Ensure calling while capturing (`is_capturing()` returns `True`).
