@@ -11,8 +11,6 @@ struct WindowInfo
 class WindowEnumerator
 {
 public:
-    WindowEnumerator();
-    ~WindowEnumerator();
 
     std::vector<WindowInfo> EnumerateVisibleWindows();
     HWND FindWindowByTitleAndClass(const std::wstring& title, const std::wstring& className);

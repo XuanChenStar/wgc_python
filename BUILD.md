@@ -8,9 +8,10 @@
 wgc_python/
 ├── wgc_python.py            # Python API
 ├── test.py                  # 测试脚本
-├── test_api.py              # API功能测试
+
 ├── requirements.txt         # Python 依赖
-├── wgc_python.dll           # 编译后的 DLL (需复制到此目录)
+├── wgc_python/
+│   └── wgc_python.dll       # 编译后的 DLL (需复制到此目录)
 └── wgc_python_dll/          # C++ DLL 源码
     ├── WGCWindowCapture.h/cpp   # 核心捕获类 (双缓冲Staging纹理 + Pause/Resume)
     ├── WGCExport.h/cpp          # DLL 导出接口
@@ -45,7 +46,7 @@ wgc_python/
 msbuild wgc_python_dll.sln /p:Configuration=Release /p:Platform=x64
 
 # 复制 DLL
-copy "x64\Release\wgc_python.dll" "..\wgc_python.dll"
+copy "x64\Release\wgc_python.dll" "..\wgc_python\wgc_python.dll"
 ```
 
 ## 输出位置
@@ -59,11 +60,10 @@ copy "x64\Release\wgc_python.dll" "..\wgc_python.dll"
 
 ```bash
 # 安装依赖
-pip install numpy opencv-python
+pip install numpy
 
 # 运行测试
 python test.py
-python test_api.py
 ```
 
 ## DLL 导出函数
@@ -71,16 +71,17 @@ python test_api.py
 | 函数 | 说明 |
 |------|------|
 | `EnumerateWindows` | 枚举所有可见窗口 |
-| `StartContinuousCapture` | 启动连续捕获 |
-| `GetLatestFrame` | 获取最新帧 (BGRA) |
-| `FreeImageData` | 释放图像数据 |
-| `StopContinuousCapture` | 停止捕获 |
-| `IsCapturing` | 是否正在捕获 |
-| `GetFrameCount` | 已捕获帧数 |
-| `GetLastErrorMsg` | 获取错误信息 |
+| `StartCapture` | 启动捕获 |
+| `GetFrameMapped` | 获取 GPU 映射帧 (ptr, w, h, pitch) |
+| `ReleaseMappedFrame` | 释放 GPU 映射 |
+| `StopCapture` | 停止捕获 |
 | `PauseCapture` | 暂停捕获 (零资源待机) |
 | `ResumeCapture` | 恢复捕获 |
+| `IsCapturing` | 是否正在捕获 |
 | `IsPaused` | 是否已暂停 |
+| `GetFrameCount` | 已捕获帧数 |
+| `GetLastErrorMsg` | 获取错误信息 |
+| `GetActiveCaptureCount` | 活跃捕获会话数 |
 
 ## 技术架构
 
@@ -129,7 +130,7 @@ WGC捕获 → GPU Surface纹理
 
 ### 找不到 DLL
 
-确保 `wgc_python.dll` 与 `wgc_python.py` 在同一目录。
+确保 `wgc_python.dll` 与 `wgc_python\__init__.py` 在同一目录。
 
 ### 捕获失败
 

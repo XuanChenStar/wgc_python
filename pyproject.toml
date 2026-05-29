@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "wgc-python"
+version = "2.0.0"
+description = "极致性能的 Windows Graphics Capture 库 — 零拷贝 GPU→Python，按需捕获零开销待机"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "XuanChenxuan"},
+]
+keywords = ["wgc", "windows-graphics-capture", "screen-capture", "automation", "game-capture"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: Microsoft :: Windows 10",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Capture",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy",
+    "opencv-python",
+]
+
+[project.urls]
+Homepage = "https://github.com/XuanChenxuan/wgc_python"
+Repository = "https://github.com/XuanChenxuan/wgc_python"
+BugTracker = "https://github.com/XuanChenxuan/wgc_python/issues"
+
+[tool.setuptools.packages.find]
+include = ["wgc_python*"]
+
+[tool.setuptools.package-data]
+wgc_python = ["*.dll"]

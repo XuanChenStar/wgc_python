@@ -23,46 +23,53 @@ Are you struggling with these problems?
 # Traditional approach: Either waste resources or suffer latency
 start_capture()  # 50ms overhead
 get_frame()      # Get screenshot
-stop_capture()   # Destroy session
-# Next screenshot needs to start all over...
+stop_capture()   # Destroy session (50ms)
 
 # wgc_python approach: One-time init, on-demand capture, zero-overhead standby
-start_capture()          # Initialize once
-while running:
-    resume_capture()     # <1ms resume
-    frame = get_frame()  # Lightning fast
-    pause_capture()      # <1ms pause, enter zero-power standby
-    # Process your business logic...
-stop_capture()
+with WindowCapture("Window", "Class") as cap:
+    while running:
+        frame = cap.capture_one()  # auto Resume → wait → copy → Pause
+        # Process image...
 ```
 
 ### 📊 Performance Comparison
 
-| Solution | FPS | Background Capture | CPU Usage | Frequent Call Overhead |
-|----------|-----|-------------------|-----------|----------------------|
-| python-mss / BitBlt | ~60 | ❌ | High | Low |
-| PrintWindow | ~38 | ✅ | Medium | Low |
-| Other WGC wrappers | 180+ | ✅ | High (continuous) | Very High (50ms+) |
-| **wgc_python** | **180+** | ✅ | **Near Zero (when paused)** | **Very Low (<1ms)** |
+| Solution | FPS | Background Capture | CPU Usage | Toggle Overhead | GPU When Paused |
+|----------|-----|-------------------|-----------|----------------|-----------------|
+| python-mss / BitBlt | ~60 | ❌ | High | Low | N/A (no pause) |
+| PrintWindow | ~38 | ✅ | Medium | Low | N/A (per-call) |
+| Other WGC wrappers | 180+ | ✅ | High (continuous) | Very High (50ms+) | High (can't truly pause) |
+| **wgc_python** | **180+** | ✅ | **Near Zero (when paused)** | **<1μs (atomic flag)** | **Zero (no D3D ops)** |
 
 ### ✨ Core Advantages
 
 #### 1. Extreme Performance
 - **180+ FPS** high frame rate capture, 5x faster than PrintWindow
 - **Double-buffered Staging Texture**: GPU async copy, read/write non-blocking
-- **Zero-copy Friendly**: `np.frombuffer` direct mapping, no extra memory copy
+- **Zero-copy path**: `np.ndarray(strides=...)` directly from GPU-mapped memory
 
 #### 2. Smart Resource Management
-- **Pause/Resume Mechanism**: GPU stops copying when paused, CPU usage drops to zero
-- **Auto Frame Skipping**: Automatically skips processing when window content is static
-- **Session Reuse**: Avoids overhead of frequent D3D device creation/destruction
+- **Pause/Resume <1μs soft-pause**: Atomic flag only, no WGC session teardown
+- **capture_one() auto management**: Resume → wait → copy → Pause, zero GPU driver overhead between captures
+- **Session Reuse**: No frequent D3D device creation/destruction
 
 #### 3. Minimalist API
-- **Synchronous Call Model**: No callbacks, events, or queues to handle
-- **Thread-Safe Encapsulation**: C++ layer handles all multi-threading complexity
-- **Ready to Use**: Start capturing with just 5 lines of code
+- **capture_one()**: One-line on-demand capture, returns numpy array
+- **get_frame()**: Zero-copy raw pointer path (advanced)
+- **Thread safe**: C++ handles all multi-threading complexity
 
-#### 4. Capture Behind Windows
+#### 4. Multi-Instance Capture
+- Create multiple capture sessions simultaneously within one process
+- Each session has its own D3D11 device, staging textures, and WinRT session — fully isolated
+- Supports concurrent capture of the same window
+
+#### 5. Client Area Precision (No Title Bar by Default)
+- **Default `client_area_only=True`**: captures only window client area, automatically crops title bar and borders
+- **Set `client_area_only=False`**: captures entire window including title bar and borders, for UI recording
+- DPI-aware: automatic high-DPI scaling correction for pixel-perfect cropping
+- GPU-level cropping via `CopySubresourceRegion`, no wasted bandwidth or CPU
+
+#### 6. Capture Behind Windows
 - Supports capturing occluded, minimized, and background windows
 - Perfect for games, desktop apps, and various scenarios
 
@@ -79,137 +86,78 @@ pip install wgc-python
 ### Basic Usage
 
 ```python
-from wgc_python import enumerate_windows, start_capture, get_frame, stop_capture
+from wgc_python import WindowCapture, enumerate_windows
 
 # Enumerate all windows
-windows = enumerate_windows()
-for title, class_name in windows:
+for title, class_name in enumerate_windows():
     print(f"{title} ({class_name})")
 
-# Start capture
-if start_capture("Window Title", "WindowClass"):
-    result = get_frame()
-    if result:
-        data, width, height = result
-        # data: BGRA format bytes
-    stop_capture()
+# On-demand capture (recommended — zero-resource standby)
+with WindowCapture("Window Title", "WindowClass") as cap:
+    frame = cap.capture_one()     # BGRA numpy array, shape (h, w, 4)
+    if frame is not None:
+        print(f"Captured: {frame.shape}")
+
+# Client area demo
+# Default client_area_only=True: content only, no title bar/borders
+cap_client = WindowCapture("Notepad", "Notepad")                       # content only
+cap_full  = WindowCapture("Notepad", "Notepad", client_area_only=False) # with title bar
+frame_client = cap_client.capture_one()  # edit area only
+frame_full  = cap_full.capture_one()    # title bar + menu + edit area
+cap_client.close()
+cap_full.close()
 ```
 
 ### Best Practice for Automation
 
 ```python
-from wgc_python import *
-import numpy as np
-import cv2
+from wgc_python import WindowCapture
 
-# Initialize once at program startup
-start_capture("Game Window", "UnityWndClass")
+cap = WindowCapture("Game Window", "UnityWndClass")
 
 while True:
-    # Resume when screenshot is needed
-    resume_capture()
-    
-    result = get_frame()
-    if result:
-        data, width, height = result
-        img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-        # Process image...
-    
-    # Pause immediately after processing to release resources
-    pause_capture()
-    
-    # Execute other business logic...
+    frame = cap.capture_one(timeout=1.0)
+    if frame is not None:
+        # frame is BGRA numpy array, ready for OpenCV/template matching
+        pass
     time.sleep(1)
 
-stop_capture()
+cap.close()
 ```
 
-### Mixed Scenario: Frequent Capture + Long Idle + Background Running
-
-This is the most typical scenario for automation scripts: frequent screenshots needed, but most time spent waiting/processing, and target window may be occluded or in background.
+### Zero-Copy Advanced Usage
 
 ```python
-from wgc_python import *
+from wgc_python import WindowCapture
 import numpy as np
-import cv2
-import time
+import ctypes
 
-# Typical automation scenario: Game AI, RPA scripts, etc.
-# Features: Frequent screenshots, long idle time, window may run in background
-
-start_capture("Target Window", "WindowClass")
-
-def find_target(img):
-    """Template matching or other image processing"""
-    # Your image recognition logic...
-    return None
-
-def execute_action(target):
-    """Execute automation action"""
-    # Your automation logic...
-    time.sleep(0.5)  # Simulate action time
-
-def wait_for_condition():
-    """Wait for a condition to be met"""
-    time.sleep(2)  # Simulate waiting
-
-try:
-    while True:
-        # === Capture phase: Resume, fast acquisition ===
-        resume_capture()
-        
-        result = get_frame()
-        if result:
-            data, width, height = result
-            img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-            
-            target = find_target(img)
-            if target:
-                # === Immediately pause, release resources ===
-                pause_capture()
-                
-                # Execute action (capture paused, zero resource usage)
-                execute_action(target)
-            else:
-                # Target not found, pause and wait
-                pause_capture()
-                wait_for_condition()
-        else:
-            pause_capture()
-            time.sleep(0.1)
-            
-except KeyboardInterrupt:
-    pass
-
-stop_capture()
+with WindowCapture("Window", "Class") as cap:
+    cap.resume()
+    r = cap.get_frame()  # (ptr, w, h, row_pitch) — GPU mapped pointer
+    if r:
+        ptr, w, h, rp = r
+        arr = np.ndarray((h, w, 4), dtype=np.uint8,
+                         buffer=(ctypes.c_ubyte * (h * rp)).from_address(ptr),
+                         strides=(rp, 4, 1))
+        # arr is a zero-copy view into GPU-mapped memory
+        cap.release_frame()
+    cap.pause()
 ```
-
-**Advantages of this pattern:**
-- During capture: 180+ FPS lightning fast
-- During idle: CPU/GPU usage drops to zero
-- Background running: Window can be occluded or minimized
-- Session reuse: No frequent start/stop, zero-latency switching
 
 ### Real-time Display
 
 ```python
-from wgc_python import *
-import numpy as np
+from wgc_python import WindowCapture
 import cv2
 
-if start_capture("Window Title", "WindowClass"):
+with WindowCapture("Window Title", "WindowClass") as cap:
     while True:
-        result = get_frame()
-        if result:
-            data, width, height = result
-            img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-            img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            cv2.imshow("Capture", img_bgr)
-        
+        frame = cap.capture_one()
+        if frame is not None:
+            cv2.imshow("Capture", cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-    
-    stop_capture()
     cv2.destroyAllWindows()
 ```
 
@@ -219,17 +167,29 @@ if start_capture("Window Title", "WindowClass"):
 
 ```python
 from wgc_python import (
-    enumerate_windows,    # Enumerate all visible windows
-    start_capture,        # Start capture session
-    get_frame,            # Get latest frame (BGRA format)
-    stop_capture,         # Stop capture session
-    is_capturing,         # Check if capturing
-    get_frame_count,      # Get captured frame count
-    get_last_error,       # Get last error message
-    pause_capture,        # Pause capture (zero-resource standby)
-    resume_capture,       # Resume capture
-    is_paused,            # Check if paused
+    WindowCapture,             # Window capture class (context manager support)
+    enumerate_windows,         # Enumerate all visible windows
+    get_last_error,            # Get last error message (thread-safe)
+    get_active_capture_count,  # Get active capture count
 )
+
+# WindowCapture methods:
+#   cap = WindowCapture(title, class_name, client_area_only=True)
+#
+#   cap.capture_one(timeout=0.5)  -> np.ndarray | None  ★ recommended
+#      Auto Resume → wait for frame → copy to numpy → Pause
+#      WGC fully dormant between captures, zero GPU driver overhead
+#
+#   cap.get_frame()              -> (ptr, w, h, row_pitch) | None
+#   cap.release_frame()           # Release GPU mapping
+#   cap.pause()                   # Pause capture (zero-resource standby)
+#   cap.resume()                  # Resume capture
+#   cap.stop()                    # Stop frame arrival
+#   cap.close()                   # Destroy session
+#   cap.is_capturing()  -> bool
+#   cap.is_paused()     -> bool
+#   cap.get_frame_count()  -> int
+#   cap.handle             -> int (DLL handle)
 ```
 
 ---
@@ -238,34 +198,60 @@ from wgc_python import (
 
 ```
 WGC Capture → GPU Surface Texture
-                  ↓
-             CopyResource (GPU async copy)
-                  ↓
-    ┌─────────────────────────────┐
-    │  Double-buffered Staging    │
-    │  [0] Write ←→ [1] Read      │
-    └─────────────────────────────┘
-                  ↓
-             Map/Unmap (CPU on-demand read)
-                  ↓
-             Python numpy array
+                   │
+         ┌─────────▼──────────┐
+         │   FrameArrived     │
+         │  if pausing → ↑   │  ← Paused: return directly, zero D3D ops
+         └─────────┬──────────┘
+                   │
+              CopyResource (GPU async copy)
+                   │
+     ┌─────────────────────────────┐
+     │  Double-buffered Staging    │
+     │  [0] Write ←→ [1] Read      │
+     │  m_textureInUse anti-collide │
+     └─────────────────────────────┘
+                   │
+              Map (permanently mapped GPU memory)
+                   │
+     ┌────── Zero-Copy Output ────┐
+     │ get_frame()                 │
+     │ raw ptr → numpy zero-copy   │
+     │ requires release_frame()    │
+     └─────────────────────────────┘
+
+     ┌────── One-Click Capture ───┐
+     │ capture_one()               │
+     │ auto Pause/Resume           │
+     │ returns numpy array         │
+     │ zero GPU overhead when idle │
+     └─────────────────────────────┘
 ```
 
 ### How Pause/Resume Works
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    FrameArrived Callback             │
-├─────────────────────────────────────────────────────┤
-│  if (m_isPaused) return;  // Skip when paused        │
-│                                                      │
-│  // Normal processing: GPU → CPU copy               │
-│  CopyResource(stagingTexture, surfaceTexture);      │
-└─────────────────────────────────────────────────────┘
-         ↑                              ↑
-    On Resume                      On Pause
-  m_isPaused = false           m_isPaused = true
-  Start processing              Skip all frame processing
+  User calls cap.pause()
+         │
+    m_isPaused = true   ◄──── atomic flag, <1μs
+    m_readableStagingIndex = -1
+         │
+    ┌────▼────────────────────────────────────────────┐
+    │           FrameArrived Callback (WGC still fires)│
+    │                                                  │
+    │  lock(mutex);                                    │
+    │  if (m_isPaused) return;     // ← pure CPU, skip│
+    │  // ↓ below runs only after resume ↓             │
+    │  CopyResource(staging, frame);                   │
+    │  m_readableStagingIndex = idx;                   │
+    │  unlock(mutex);                                  │
+    └────▲────────────────┬───────────────────────────┘
+         │                │
+  User calls cap.resume()  MapFrame checks readableStagingIndex
+  m_isPaused = false       <0 → no frame ready → returns false
+
+  No WGC session destroy / no D3D device recreate / no callback re-register
+  → zero-latency resume, no spikes
 ```
 
 ---
@@ -274,29 +260,26 @@ WGC Capture → GPU Surface Texture
 
 ```
 wgc_python/
+├── wgc_python/                   # Python package
+│   ├── __init__.py               # Python API (ctypes FFI)
+│   └── wgc_python.dll            # Compiled DLL
 ├── wgc_python_dll/               # C++ DLL Project
-│   ├── WGCWindowCapture.h/cpp    # WGC capture core (double-buffered)
-│   ├── WGCExport.h/cpp           # DLL exports
-│   ├── D3DInterop.cpp            # D3D11 interop
+│   ├── WGCWindowCapture.h/cpp    # Capture core (double-buffered + zero-copy)
+│   ├── WGCExport.h/cpp           # DLL exports (thread-safe error handling)
+│   ├── D3DInterop.cpp            # D3D11 device interop
 │   ├── WindowEnumerator.h/cpp    # Window enumeration
+│   ├── pch.h                     # Precompiled header
 │   └── packages/                 # NuGet packages
-├── windows_capture/              # Python package
-│   └── __init__.py               # Python API
-├── wgc_python.py                 # Python API (alternative)
-├── wgc_python.dll                # Compiled DLL
-├── test.py                       # Real-time display test
-├── test_api.py                   # API function test
-├── BUILD.md                      # Build instructions
+├── test.py                       # Functional tests
+├── test_mt.py                    # Multi-threaded on-demand capture example
+├── pyproject.toml                # pip build config
+├── BUILD.md / BUILD_EN.md        # Build instructions (CN/EN)
+├── README.md / README_EN.md      # Usage docs (CN/EN)
+├── CONTRIBUTING.md               # Contributing guide
+├── CODE_OF_CONDUCT.md            # Code of conduct
+├── LICENSE                       # MIT License
 └── requirements.txt              # Python dependencies
 ```
-
----
-
-## Requirements
-
-- Windows 10 1903+ (Build 18362)
-- Python 3.6+
-- numpy, opencv-python
 
 ---
 

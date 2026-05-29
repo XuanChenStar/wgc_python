@@ -21,38 +21,22 @@
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Foundation.Metadata.h>
-#include <winrt/Windows.Graphics.Capture.h>
-#include <winrt/Windows.Graphics.DirectX.h>
-#include <winrt/Windows.Graphics.DirectX.Direct3d11.h>
-#include <winrt/Windows.Graphics.Imaging.h>
-#include <winrt/Windows.System.h>
-#include <winrt/Windows.UI.h>
-#include <winrt/Windows.UI.Composition.h>
+
 
 #include <atomic>
 #include <memory>
 #include <algorithm>
-#include <unordered_set>
 #include <vector>
-#include <optional>
-#include <future>
 #include <mutex>
 #include <string>
 
-#include <wincodec.h>
 #include <dwmapi.h>
-#include <shcore.h>
-#include <wincrypt.h>
 
-#include <wil/resource.h>
-#include <wil/cppwinrt_helpers.h>
-#include <wil/coroutine.h>
+
 
 namespace util
 {
     using robmikh::common::desktop::CreateCaptureItemForWindow;
-    using robmikh::common::desktop::CreateCaptureItemForMonitor;
 
     inline winrt::com_ptr<ID3D11Device> CreateD3D11Device()
     {
@@ -73,28 +57,5 @@ namespace util
             d3dContext.put()));
 
         return d3dDevice;
-    }
-
-    inline winrt::com_ptr<ID3D11Texture2D> CopyD3DTexture(
-        winrt::com_ptr<ID3D11Device> const& device,
-        winrt::com_ptr<ID3D11Texture2D> const& texture,
-        bool includeAlpha)
-    {
-        D3D11_TEXTURE2D_DESC desc = {};
-        texture->GetDesc(&desc);
-
-        D3D11_TEXTURE2D_DESC copyDesc = desc;
-        copyDesc.Usage = D3D11_USAGE_DEFAULT;
-        copyDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        copyDesc.CPUAccessFlags = 0;
-
-        winrt::com_ptr<ID3D11Texture2D> copy;
-        winrt::check_hresult(device->CreateTexture2D(&copyDesc, nullptr, copy.put()));
-
-        winrt::com_ptr<ID3D11DeviceContext> context;
-        device->GetImmediateContext(context.put());
-        context->CopyResource(copy.get(), texture.get());
-
-        return copy;
     }
 }

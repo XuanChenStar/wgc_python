@@ -8,9 +8,10 @@ English | [简体中文](BUILD.md)
 wgc_python/
 ├── wgc_python.py            # Python API
 ├── test.py                  # Test script
-├── test_api.py              # API function test
+
 ├── requirements.txt         # Python dependencies
-├── wgc_python.dll           # Compiled DLL (copy to this directory)
+├── wgc_python/
+│   └── wgc_python.dll       # Compiled DLL (copy to this directory)
 └── wgc_python_dll/          # C++ DLL source
     ├── WGCWindowCapture.h/cpp   # Core capture class (double-buffered staging texture + Pause/Resume)
     ├── WGCExport.h/cpp          # DLL export interface
@@ -45,7 +46,7 @@ wgc_python/
 msbuild wgc_python_dll.sln /p:Configuration=Release /p:Platform=x64
 
 # Copy DLL
-copy "x64\Release\wgc_python.dll" "..\wgc_python.dll"
+copy "x64\Release\wgc_python.dll" "..\wgc_python\wgc_python.dll"
 ```
 
 ## Output Location
@@ -59,11 +60,10 @@ copy "x64\Release\wgc_python.dll" "..\wgc_python.dll"
 
 ```bash
 # Install dependencies
-pip install numpy opencv-python
+pip install numpy
 
 # Run test
 python test.py
-python test_api.py
 ```
 
 ## DLL Export Functions
@@ -71,16 +71,17 @@ python test_api.py
 | Function | Description |
 |----------|-------------|
 | `EnumerateWindows` | Enumerate all visible windows |
-| `StartContinuousCapture` | Start continuous capture |
-| `GetLatestFrame` | Get latest frame (BGRA) |
-| `FreeImageData` | Free image data |
-| `StopContinuousCapture` | Stop capture |
-| `IsCapturing` | Is currently capturing |
-| `GetFrameCount` | Captured frame count |
-| `GetLastErrorMsg` | Get error message |
+| `StartCapture` | Start capture |
+| `GetFrameMapped` | Get GPU-mapped frame (ptr, w, h, pitch) |
+| `ReleaseMappedFrame` | Release GPU mapping |
+| `StopCapture` | Stop capture |
 | `PauseCapture` | Pause capture (zero-resource standby) |
 | `ResumeCapture` | Resume capture |
+| `IsCapturing` | Is currently capturing |
 | `IsPaused` | Is paused |
+| `GetFrameCount` | Captured frame count |
+| `GetLastErrorMsg` | Get error message |
+| `GetActiveCaptureCount` | Active capture session count |
 
 ## Technical Architecture
 
@@ -129,7 +130,7 @@ Check type declarations in lambda expressions, use explicit WinRT types instead 
 
 ### DLL Not Found
 
-Ensure `wgc_python.dll` is in the same directory as `wgc_python.py`.
+Ensure `wgc_python.dll` is in the same directory as `wgc_python\__init__.py`.
 
 ### Capture Failed
 

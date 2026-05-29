@@ -1,14 +1,6 @@
 #include "pch.h"
 #include "WindowEnumerator.h"
 
-WindowEnumerator::WindowEnumerator()
-{
-}
-
-WindowEnumerator::~WindowEnumerator()
-{
-}
-
 std::vector<WindowInfo> WindowEnumerator::EnumerateVisibleWindows()
 {
     std::vector<WindowInfo> windows;
@@ -16,32 +8,28 @@ std::vector<WindowInfo> WindowEnumerator::EnumerateVisibleWindows()
     EnumWindows([](HWND hwnd, LPARAM lParam)
     {
         auto* windowList = reinterpret_cast<std::vector<WindowInfo>*>(lParam);
-        
-        if (GetWindowTextLengthW(hwnd) > 0)
+
+        int titleLength = GetWindowTextLengthW(hwnd);
+        if (titleLength > 0)
         {
-            auto titleLength = GetWindowTextLengthW(hwnd);
-            if (titleLength > 0)
-            {
-                titleLength++;
-            }
-            std::wstring title(titleLength, 0);
-            GetWindowTextW(hwnd, title.data(), titleLength);
+            std::wstring title(titleLength + 1, 0);
+            GetWindowTextW(hwnd, title.data(), titleLength + 1);
+            title.resize(titleLength);
             
             auto classNameLength = 256;
             std::wstring className(classNameLength, 0);
             GetClassNameW(hwnd, className.data(), classNameLength);
             
-            WindowInfo info;
-            info.WindowHandle = hwnd;
-            info.Title = title;
-            info.ClassName = className;
-            
             if (WindowEnumerator::IsCapturableWindow(hwnd))
             {
-                windowList->push_back(info);
+                WindowInfo info;
+                info.WindowHandle = hwnd;
+                info.Title = std::move(title);
+                info.ClassName = std::move(className);
+                windowList->push_back(std::move(info));
             }
         }
-        
+
         return TRUE;
     }, reinterpret_cast<LPARAM>(&windows));
 
@@ -64,19 +52,16 @@ BOOL CALLBACK WindowEnumerator::FindWindowProc(HWND hwnd, LPARAM lParam)
 {
     auto* context = reinterpret_cast<FindWindowContext*>(lParam);
 
-    if (GetWindowTextLengthW(hwnd) > 0)
+    int titleLength = GetWindowTextLengthW(hwnd);
+    if (titleLength > 0)
     {
-        auto titleLength = GetWindowTextLengthW(hwnd);
-        if (titleLength > 0)
-        {
-            titleLength++;
-        }
-        std::wstring title(titleLength, 0);
-        GetWindowTextW(hwnd, title.data(), titleLength);
+        std::wstring title(titleLength + 1, 0);
+        GetWindowTextW(hwnd, title.data(), titleLength + 1);
+        title.resize(titleLength);
 
-        auto classNameLength = 256;
-        std::wstring className(classNameLength, 0);
-        GetClassNameW(hwnd, className.data(), classNameLength);
+        wchar_t classNameBuf[256];
+        GetClassNameW(hwnd, classNameBuf, 256);
+        std::wstring className(classNameBuf);
 
         // Trim whitespace from strings
         title.erase(title.find_last_not_of(L" \t\n\r") + 1);
@@ -154,10 +139,10 @@ bool WindowEnumerator::IsKnownBlockedWindow(HWND hwnd)
     std::wstring className(classNameLength, 0);
     GetClassNameW(hwnd, className.data(), classNameLength);
 
-    return wcscmp(title.c_str(), L"Task View") == 0 &&
-        wcscmp(className.c_str(), L"Windows.UI.Core.CoreWindow") == 0 ||
-        wcscmp(title.c_str(), L"DesktopWindowXamlSource") == 0 &&
-        wcscmp(className.c_str(), L"Windows.UI.Core.CoreWindow") == 0 ||
-        wcscmp(title.c_str(), L"PopupHost") == 0 &&
-        wcscmp(className.c_str(), L"Xaml_WindowedPopupClass") == 0;
+    return (wcscmp(title.c_str(), L"Task View") == 0 &&
+        wcscmp(className.c_str(), L"Windows.UI.Core.CoreWindow") == 0) ||
+        (wcscmp(title.c_str(), L"DesktopWindowXamlSource") == 0 &&
+        wcscmp(className.c_str(), L"Windows.UI.Core.CoreWindow") == 0) ||
+        (wcscmp(title.c_str(), L"PopupHost") == 0 &&
+        wcscmp(className.c_str(), L"Xaml_WindowedPopupClass") == 0);
 }

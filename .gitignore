@@ -1,12 +1,10 @@
 # Visual Studio
 wgc_python_dll/.vs/
+wgc_python_dll/x64/
+wgc_python_dll/wgc_python_dll/x64/
 
 # NuGet packages
 wgc_python_dll/packages/
-
-# Build output
-wgc_python_dll/x64/
-wgc_python_dll/wgc_python_dll/x64/
 
 # Python
 __pycache__/
@@ -33,6 +31,7 @@ wheels/
 # Test outputs
 screenshot.png
 test_save.png
+output*.png
 
 # IDE
 .idea/
@@ -41,5 +40,6 @@ test_save.png
 *.swo
 .trae/
 .vs/
+
 # Original sample code
 originl/

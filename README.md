@@ -23,46 +23,54 @@
 # 传统方式：要么持续空转浪费资源，要么频繁启停承受延迟
 start_capture()  # 50ms 开销
 get_frame()      # 获取截图
-stop_capture()   # 销毁会话
+stop_capture()   # 销毁会话（50ms）
 # 下次截图又要重新开始...
 
 # wgc_python 方式：一次启动，按需截图，零开销待机
-start_capture()          # 仅一次初始化
-while running:
-    resume_capture()     # <1ms 恢复
-    frame = get_frame()  # 极速获取
-    pause_capture()      # <1ms 暂停，进入零功耗待机
-    # 处理你的业务逻辑...
-stop_capture()
+with WindowCapture("窗口", "类名") as cap:
+    while running:
+        frame = cap.capture_one()  # auto Resume → 等待帧 → 拷贝 → Pause
+        # 处理图像...
 ```
 
 ### 📊 性能对比
 
-| 方案 | FPS | 后台捕获 | CPU 占用 | 频繁调用开销 |
-|------|-----|---------|---------|-------------|
-| python-mss / BitBlt | ~60 | ❌ | 高 | 低 |
-| PrintWindow | ~38 | ✅ | 中 | 低 |
-| 其他 WGC 封装 | 180+ | ✅ | 高（持续空转） | 极高 (50ms+) |
-| **wgc_python** | **180+** | ✅ | **极低（Pause时为0）** | **极低 (<1ms)** |
+| 方案 | FPS | 后台捕获 | CPU 占用 | 频繁切换开销 | 暂停后 GPU 占用 |
+|------|-----|---------|---------|-------------|----------------|
+| python-mss / BitBlt | ~60 | ❌ | 高 | 低 | N/A (无暂停概念) |
+| PrintWindow | ~38 | ✅ | 中 | 低 | N/A (每次调用即捕获) |
+| 其他 WGC 封装 | 180+ | ✅ | 高（持续空转） | 极高 (50ms+) | 高 (无法真正暂停) |
+| **wgc_python** | **180+** | ✅ | **极低（Pause时归零）** | **<1μs（原子标志位）** | **归零（无 D3D 操作）** |
 
 ### ✨ 核心优势
 
 #### 1. 极致性能
 - **180+ FPS** 高帧率捕获，比 PrintWindow 快 5 倍
 - **双缓冲 Staging 纹理**：GPU 异步拷贝，读写互不阻塞
-- **零拷贝友好**：`np.frombuffer` 直接映射，无额外内存拷贝
+- **零拷贝友好**：`np.ndarray(strides=...)` 直接从 GPU 映射内存构造视图
 
 #### 2. 智能资源管理
-- **Pause/Resume 机制**：暂停时 GPU 停止拷贝，CPU 占用归零
-- **静态窗口自动降帧**：窗口内容不变时自动跳过帧处理
+- **Pause/Resume <1μs 软暂停**：不销毁不重建 WGC session，仅原子标志位跳过帧处理
+- **capture_one() 自动管理**：Resume → 等待帧 → 拷贝 → Pause，间隙 GPU 驱动零开销
 - **会话复用**：避免频繁创建/销毁 D3D 设备的开销
 
 #### 3. 极简 API
-- **同步调用模型**：无需处理回调、事件、队列
-- **线程安全封装**：C++ 层处理所有多线程复杂性
-- **开箱即用**：5 行代码即可开始捕获
+- **capture_one()**：一行代码完成按需捕获，返回 numpy 数组
+- **get_frame()**：零拷贝裸指针路径（高级使用）
+- **线程安全**：C++ 层处理所有多线程复杂性
 
-#### 4. 无视遮挡
+#### 4. 多开并发
+- 同一进程内可同时创建多个捕获会话，互不干扰
+- 每个会话独立 D3D11 设备 + 独立纹理 + 独立 WinRT session，完全隔离
+- 支持同窗口多路并发捕获
+
+#### 5. 客户区精准裁剪（默认不截取标题栏/边框）
+- **默认 `client_area_only=True`**：只捕获窗口客户区内容，自动裁剪标题栏和边框，直接输出有效像素
+- **设置 `client_area_only=False`**：捕获整个窗口（含标题栏和边框），满足 UI 记录场景
+- DPI 感知：自动修正高 DPI 缩放偏移，裁剪精度像素级
+- GPU 级裁剪：`CopySubresourceRegion` 在 GPU 上完成裁剪，不浪费带宽和 CPU
+
+#### 6. 无视遮挡
 - 支持捕获被遮挡、最小化、后台窗口
 - 完美适配游戏、桌面应用等各种场景
 
@@ -79,137 +87,78 @@ pip install wgc-python
 ### 基础用法
 
 ```python
-from wgc_python import enumerate_windows, start_capture, get_frame, stop_capture
+from wgc_python import WindowCapture, enumerate_windows
 
 # 枚举所有窗口
-windows = enumerate_windows()
-for title, class_name in windows:
+for title, class_name in enumerate_windows():
     print(f"{title} ({class_name})")
 
-# 启动捕获
-if start_capture("窗口标题", "窗口类名"):
-    result = get_frame()
-    if result:
-        data, width, height = result
-        # data: BGRA 格式字节
-    stop_capture()
+# 按需捕获（推荐 —— 零开销待机）
+with WindowCapture("窗口标题", "窗口类名") as cap:
+    frame = cap.capture_one()     # BGRA numpy 数组，shape (h, w, 4)
+    if frame is not None:
+        print(f"捕获成功: {frame.shape}")
+
+# 客户区裁剪演示
+# 默认 client_area_only=True：只截取客户区，不含标题栏/边框
+cap_client = WindowCapture("记事本", "Notepad")                      # 只截内容
+cap_full  = WindowCapture("记事本", "Notepad", client_area_only=False)  # 含标题栏
+frame_client = cap_client.capture_one()  # 只有编辑区
+frame_full  = cap_full.capture_one()    # 含标题栏 + 菜单 + 编辑区
+cap_client.close()
+cap_full.close()
 ```
 
 ### 自动化最佳实践
 
 ```python
-from wgc_python import *
-import numpy as np
-import cv2
+from wgc_python import WindowCapture
 
-# 程序启动时初始化一次
-start_capture("游戏窗口", "UnityWndClass")
+cap = WindowCapture("游戏窗口", "UnityWndClass")
 
 while True:
-    # 需要截图时恢复
-    resume_capture()
-    
-    result = get_frame()
-    if result:
-        data, width, height = result
-        img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-        # 处理图像...
-    
-    # 处理完后立即暂停，释放资源
-    pause_capture()
-    
-    # 执行其他业务逻辑...
+    frame = cap.capture_one(timeout=1.0)
+    if frame is not None:
+        # frame 是 BGRA numpy 数组，直接用于 OpenCV/模板匹配
+        pass
     time.sleep(1)
 
-stop_capture()
+cap.close()
 ```
 
-### 混合场景示例：频繁截图 + 大量空闲 + 后台运行
-
-这是自动化脚本最典型的场景：需要频繁截图，但大部分时间在等待/处理逻辑，且目标窗口可能被遮挡或在后台。
+### 零拷贝高级用法
 
 ```python
-from wgc_python import *
+from wgc_python import WindowCapture
 import numpy as np
-import cv2
-import time
+import ctypes
 
-# 典型自动化场景：游戏AI、RPA脚本等
-# 特点：截图频繁、空闲时间长、窗口可能后台运行
-
-start_capture("目标窗口", "WindowClass")
-
-def find_target(img):
-    """模板匹配等图像处理"""
-    # 你的图像识别逻辑...
-    return None
-
-def execute_action(target):
-    """执行自动化操作"""
-    # 你的自动化逻辑...
-    time.sleep(0.5)  # 模拟操作耗时
-
-def wait_for_condition():
-    """等待某个条件满足"""
-    time.sleep(2)  # 模拟等待
-
-try:
-    while True:
-        # === 截图阶段：恢复捕获，快速获取 ===
-        resume_capture()
-        
-        result = get_frame()
-        if result:
-            data, width, height = result
-            img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-            
-            target = find_target(img)
-            if target:
-                # === 立即暂停，释放资源 ===
-                pause_capture()
-                
-                # 执行操作（此时捕获已暂停，零资源占用）
-                execute_action(target)
-            else:
-                # 未找到目标，暂停后等待
-                pause_capture()
-                wait_for_condition()
-        else:
-            pause_capture()
-            time.sleep(0.1)
-            
-except KeyboardInterrupt:
-    pass
-
-stop_capture()
+with WindowCapture("窗口", "类名") as cap:
+    cap.resume()
+    r = cap.get_frame()  # (ptr, w, h, row_pitch) — GPU 映射裸指针
+    if r:
+        ptr, w, h, rp = r
+        arr = np.ndarray((h, w, 4), dtype=np.uint8,
+                         buffer=(ctypes.c_ubyte * (h * rp)).from_address(ptr),
+                         strides=(rp, 4, 1))
+        # arr 是 GPU 内存的零拷贝视图
+        cap.release_frame()
+    cap.pause()
 ```
-
-**这种模式的优势：**
-- 截图时：180+ FPS 极速获取
-- 空闲时：CPU/GPU 占用归零
-- 后台运行：窗口可被遮挡、最小化
-- 会话复用：无需频繁启停，零延迟切换
 
 ### 实时显示
 
 ```python
-from wgc_python import *
-import numpy as np
+from wgc_python import WindowCapture
 import cv2
 
-if start_capture("窗口标题", "窗口类名"):
+with WindowCapture("窗口标题", "窗口类名") as cap:
     while True:
-        result = get_frame()
-        if result:
-            data, width, height = result
-            img = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
-            img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            cv2.imshow("Capture", img_bgr)
-        
+        frame = cap.capture_one()
+        if frame is not None:
+            cv2.imshow("Capture", cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-    
-    stop_capture()
     cv2.destroyAllWindows()
 ```
 
@@ -219,17 +168,29 @@ if start_capture("窗口标题", "窗口类名"):
 
 ```python
 from wgc_python import (
-    enumerate_windows,    # 枚举所有可见窗口
-    start_capture,        # 启动捕获会话
-    get_frame,            # 获取最新帧 (BGRA格式)
-    stop_capture,         # 停止捕获会话
-    is_capturing,         # 检查是否正在捕获
-    get_frame_count,      # 获取已捕获帧数
-    get_last_error,       # 获取最后错误信息
-    pause_capture,        # 暂停捕获 (零资源待机)
-    resume_capture,       # 恢复捕获
-    is_paused,            # 检查是否已暂停
+    WindowCapture,             # 窗口捕获类（上下文管理器支持）
+    enumerate_windows,         # 枚举所有可见窗口
+    get_last_error,            # 获取最后错误信息（线程安全）
+    get_active_capture_count,  # 获取活跃捕获数
 )
+
+# WindowCapture 类方法:
+#   cap = WindowCapture(title, class_name, client_area_only=True)
+#
+#   cap.capture_one(timeout=0.5)  -> np.ndarray | None  ★ 推荐
+#      自动 Resume → 等待帧 → 拷贝为 numpy → Pause
+#      捕获间隙 WGC 完全休眠，GPU 驱动零开销
+#
+#   cap.get_frame()              -> (ptr, w, h, row_pitch) | None
+#   cap.release_frame()           # 释放 GPU 映射
+#   cap.pause()                   # 暂停捕获（零资源待机）
+#   cap.resume()                  # 恢复捕获
+#   cap.stop()                    # 停止帧到达
+#   cap.close()                   # 销毁会话
+#   cap.is_capturing()  -> bool
+#   cap.is_paused()     -> bool
+#   cap.get_frame_count()  -> int
+#   cap.handle             -> int (DLL handle)
 ```
 
 ---
@@ -238,34 +199,60 @@ from wgc_python import (
 
 ```
 WGC捕获 → GPU Surface纹理
-              ↓
+              │
+     ┌────────▼────────┐
+     │  FrameArrived    │
+     │  if pausing → ↑  │  ← Pause时直接返回，零 D3D 操作
+     └────────┬─────────┘
+              │
          CopyResource (GPU异步复制)
               ↓
     ┌─────────────────────────┐
     │  双缓冲Staging纹理       │
     │  [0] 写入 ←→ [1] 读取   │
+    │  m_textureInUse 防冲撞   │
     └─────────────────────────┘
               ↓
-         Map/Unmap (CPU按需读取)
+         Map (永久映射 GPU 内存)
               ↓
-         Python numpy数组
+    ┌────── 零拷贝输出 ───────┐
+    │ get_frame()              │
+    │ 返回裸指针 → numpy零拷贝  │
+    │ 需手动 release_frame()    │
+    └──────────────────────────┘
+
+    ┌────── 一键捕获 ──────────┐
+    │ capture_one()            │
+    │ auto Pause/Resume        │
+    │ 返回 numpy 数组          │
+    │ 间隙 GPU 驱动零开销      │
+    └──────────────────────────┘
 ```
 
 ### Pause/Resume 工作原理
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    FrameArrived 回调                 │
-├─────────────────────────────────────────────────────┤
-│  if (m_isPaused) return;  // 暂停时直接跳过          │
-│                                                      │
-│  // 正常处理：GPU → CPU 拷贝                         │
-│  CopyResource(stagingTexture, surfaceTexture);      │
-└─────────────────────────────────────────────────────┘
-         ↑                              ↑
-    Resume 时                    Pause 时
-  m_isPaused = false           m_isPaused = true
-  开始处理帧                    跳过所有帧处理
+  用户调用 cap.pause()
+         │
+    m_isPaused = true   ◄──── 原子标志位，<1μs
+    m_readableStagingIndex = -1
+         │
+    ┌────▼────────────────────────────────────────────┐
+    │                FrameArrived 回调（WGC 仍会触发）  │
+    │                                                  │
+    │  lock(mutex);                                    │
+    │  if (m_isPaused) return;     // ← 纯CPU判断，跳过│
+    │  // ↓ 以下只在 resume 后执行 ↓                   │
+    │  CopyResource(staging, frame);                   │
+    │  m_readableStagingIndex = idx;                   │
+    │  unlock(mutex);                                  │
+    └────▲────────────────┬───────────────────────────┘
+         │                │
+  用户调用 cap.resume()  MapFrame 检查 readableStagingIndex
+  m_isPaused = false      <0 → 最近帧尚未就绪，返回 false
+  
+  不销毁 WGC session / 不重建 D3D 设备 / 不重新注册回调
+  → 恢复零延迟，无突刺
 ```
 
 ---
@@ -274,19 +261,24 @@ WGC捕获 → GPU Surface纹理
 
 ```
 wgc_python/
+├── wgc_python/                   # Python 包
+│   ├── __init__.py               # Python API（ctypes FFI）
+│   └── wgc_python.dll            # 编译后的 DLL
 ├── wgc_python_dll/               # C++ DLL 项目
-│   ├── WGCWindowCapture.h/cpp    # WGC 捕获核心 (双缓冲)
-│   ├── WGCExport.h/cpp           # DLL 导出
-│   ├── D3DInterop.cpp            # D3D11 互操作
+│   ├── WGCWindowCapture.h/cpp    # WGC 捕获核心（双缓冲 + 零拷贝）
+│   ├── WGCExport.h/cpp           # DLL 导出（含线程安全错误处理）
+│   ├── D3DInterop.cpp            # D3D11 设备互操作
 │   ├── WindowEnumerator.h/cpp    # 窗口枚举
+│   ├── pch.h                     # 预编译头
 │   └── packages/                 # NuGet 包
-├── windows_capture/              # Python 包
-│   └── __init__.py               # Python API
-├── wgc_python.py                 # Python API (备用)
-├── wgc_python.dll                # 编译后的 DLL
-├── test.py                       # 实时显示测试
-├── test_api.py                   # API功能测试
-├── BUILD.md                      # 构建说明
+├── test.py                       # 功能测试
+├── test_mt.py                    # 多线程按需捕获示例
+├── pyproject.toml                # pip 构建配置
+├── BUILD.md / BUILD_EN.md        # 构建说明（中/英）
+├── README.md / README_EN.md      # 使用文档（中/英）
+├── CONTRIBUTING.md               # 贡献指南
+├── CODE_OF_CONDUCT.md            # 行为准则
+├── LICENSE                       # MIT 许可证
 └── requirements.txt              # Python 依赖
 ```
 
@@ -296,7 +288,6 @@ wgc_python/
 
 - Windows 10 1903+ (Build 18362)
 - Python 3.6+
-- numpy, opencv-python
 
 ---
 

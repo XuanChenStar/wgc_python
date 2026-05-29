@@ -1,4 +1,12 @@
+// wgc-python — Windows Graphics Capture for Python
+// DLL export declarations
+//
+// Copyright (c) 2026 XuanChenxuan
+// MIT License — see LICENSE file for details
+
 #pragma once
+
+#include <stdint.h>
 
 #ifdef WGC_CAPTURE_DLL_EXPORTS
 #define WGC_API __declspec(dllexport)
@@ -10,24 +18,23 @@
 extern "C" {
 #endif
 
-// 窗口枚举
+typedef uint64_t CaptureHandle;
+
 WGC_API int EnumerateWindows(char*** titles, char*** classNames, int* count);
 WGC_API void FreeStringArray(char** array, int count);
 
-// 连续捕获 API
-WGC_API int StartContinuousCapture(const char* title, const char* className);
-WGC_API int GetLatestFrame(unsigned char** imageData, int* width, int* height);
-WGC_API void FreeImageData(unsigned char* data);
-WGC_API void StopContinuousCapture();
-WGC_API int IsCapturing();
-WGC_API int GetFrameCount();
+WGC_API CaptureHandle StartCapture(const char* title, const char* className, int clientAreaOnly);
+WGC_API void DestroyCapture(CaptureHandle handle);
+WGC_API int GetFrameMapped(CaptureHandle handle, unsigned char** imageData, int* width, int* height, int* rowPitch);
+WGC_API void ReleaseMappedFrame(CaptureHandle handle);
+WGC_API void StopCapture(CaptureHandle handle);
+WGC_API void PauseCapture(CaptureHandle handle);
+WGC_API void ResumeCapture(CaptureHandle handle);
+WGC_API int IsCapturing(CaptureHandle handle);
+WGC_API int IsPaused(CaptureHandle handle);
+WGC_API int GetFrameCount(CaptureHandle handle);
 
-// 暂停/恢复捕获
-WGC_API void PauseCapture();
-WGC_API void ResumeCapture();
-WGC_API int IsPaused();
-
-// 错误信息
+WGC_API size_t GetActiveCaptureCount();
 WGC_API const char* GetLastErrorMsg();
 
 #ifdef __cplusplus

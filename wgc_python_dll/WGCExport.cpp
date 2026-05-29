@@ -1,252 +1,197 @@
+// wgc-python — Windows Graphics Capture for Python
+// DLL exports — thread-safe multi-instance capture
+//
+// Copyright (c) 2026 XuanChenxuan
+// MIT License — see LICENSE file for details
+
 #include "pch.h"
 #include "WGCExport.h"
 #include "WindowEnumerator.h"
 #include "WGCWindowCapture.h"
-#include <memory>
-#include <atomic>
+#include <unordered_map>
 
-static std::unique_ptr<WGCWindowCapture> g_capture = nullptr;
-static std::mutex g_captureMutex;
-static std::string g_lastErrorMsg = "";
-static std::mutex g_errorMsgMutex;
-static bool g_winrtInitialized = false;
+static std::string g_lastError;
+static std::mutex g_errorMutex;
+static std::mutex g_managerMutex;
+static std::unordered_map<CaptureHandle, std::unique_ptr<WGCWindowCapture>> g_captures;
+static std::atomic<uint64_t> g_nextHandle{1};
+static std::atomic<bool> g_winrtInit{false};
 static std::mutex g_initMutex;
 
-static bool EnsureWinRTInitialized()
-{
-    std::lock_guard<std::mutex> lock(g_initMutex);
-    
-    if (g_winrtInitialized) return true;
-    
-    try
-    {
-        winrt::init_apartment(winrt::apartment_type::single_threaded);
-        g_winrtInitialized = true;
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+static std::wstring UTF8ToWStr(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    std::wstring r(n - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, r.data(), n);
+    return r;
 }
 
-static std::string WStringToUTF8(const std::wstring& wstr)
-{
-    if (wstr.empty()) return std::string();
-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string result(size - 1, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, result.data(), size, nullptr, nullptr);
-    return result;
+static std::string WStrToUTF8(const std::wstring& s) {
+    if (s.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, s.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string r(n - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, s.c_str(), -1, r.data(), n, nullptr, nullptr);
+    return r;
 }
 
-static std::wstring UTF8ToWString(const std::string& str)
-{
-    if (str.empty()) return std::wstring();
-    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    std::wstring result(size - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, result.data(), size);
-    return result;
+static void SetError(const std::string& msg) {
+    std::lock_guard<std::mutex> lk(g_errorMutex);
+    g_lastError = msg;
 }
 
-static void SetLastErrorMsg(const std::string& msg)
-{
-    std::lock_guard<std::mutex> lock(g_errorMsgMutex);
-    g_lastErrorMsg = msg;
+static std::string GetError() {
+    std::lock_guard<std::mutex> lk(g_errorMutex);
+    return g_lastError;
 }
 
-static HWND FindTargetWindow(const char* title, const char* className)
-{
-    std::wstring titleW = UTF8ToWString(title);
-    std::wstring classNameW = UTF8ToWString(className);
-
-    WindowEnumerator enumerator;
-    HWND hwnd = enumerator.FindWindowByTitleAndClass(titleW, classNameW);
-
-    if (!hwnd) hwnd = FindWindow(nullptr, titleW.c_str());
-
-    return hwnd;
+static bool InitWinRT() {
+    if (g_winrtInit) return true;
+    std::lock_guard<std::mutex> lk(g_initMutex);
+    if (g_winrtInit) return true;
+    try { winrt::init_apartment(winrt::apartment_type::multi_threaded); g_winrtInit = true; return true; }
+    catch (...) { return false; }
 }
 
-static bool EnsureCaptureInitialized()
-{
-    if (!g_capture)
-    {
-        g_capture = std::make_unique<WGCWindowCapture>();
+static HWND FindWnd(const char* title, const char* cls) {
+    auto t = UTF8ToWStr(title), c = UTF8ToWStr(cls);
+    WindowEnumerator e;
+    HWND h = e.FindWindowByTitleAndClass(t, c);
+    return h;
+}
+
+WGC_API const char* GetLastErrorMsg() {
+    thread_local std::string buf;
+    buf = GetError();
+    return buf.c_str();
+}
+
+WGC_API int EnumerateWindows(char*** titles, char*** classNames, int* count) {
+    try {
+        WindowEnumerator e;
+        auto wins = e.EnumerateVisibleWindows();
+        *count = (int)wins.size();
+        if (wins.empty()) { *titles = *classNames = nullptr; return 1; }
+        *titles = (char**)CoTaskMemAlloc(sizeof(char*) * wins.size());
+        *classNames = (char**)CoTaskMemAlloc(sizeof(char*) * wins.size());
+        for (size_t i = 0; i < wins.size(); i++) {
+            auto t = WStrToUTF8(wins[i].Title), c = WStrToUTF8(wins[i].ClassName);
+            (*titles)[i] = (char*)CoTaskMemAlloc(t.size() + 1);
+            (*classNames)[i] = (char*)CoTaskMemAlloc(c.size() + 1);
+            strcpy_s((*titles)[i], t.size() + 1, t.c_str());
+            strcpy_s((*classNames)[i], c.size() + 1, c.c_str());
+        }
+        return 1;
+    } catch (...) { return 0; }
+}
+
+WGC_API void FreeStringArray(char** arr, int cnt) {
+    for (int i = 0; i < cnt; i++) CoTaskMemFree(arr[i]);
+    CoTaskMemFree(arr);
+}
+
+WGC_API CaptureHandle StartCapture(const char* title, const char* className, int clientAreaOnly) {
+    try {
+        SetError("");
+        if (!InitWinRT()) { SetError("WinRT init failed"); return 0; }
+        HWND h = FindWnd(title, className);
+        if (!h) { SetError("Window not found"); return 0; }
+        if (!IsWindowVisible(h)) { SetError("Window not visible"); return 0; }
+        
+        auto cap = std::make_unique<WGCWindowCapture>();
         std::string err;
-        if (!g_capture->Initialize(&err))
-        {
-            SetLastErrorMsg("Init failed: " + err);
-            g_capture = nullptr;
-            return false;
+        if (!cap->Initialize(&err)) { SetError("Init failed: " + err); return 0; }
+        if (!cap->StartContinuousCapture(h, clientAreaOnly != 0, &err)) { SetError("Start failed: " + err); return 0; }
+        
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto handle = g_nextHandle.fetch_add(1);
+        g_captures[handle] = std::move(cap);
+        return handle;
+    } catch (...) { SetError("Exception"); return 0; }
+}
+
+WGC_API void DestroyCapture(CaptureHandle h) {
+    try {
+        if (!h) return;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        if (it != g_captures.end()) {
+            it->second->StopContinuousCapture();
+            it->second->Cleanup();
+            g_captures.erase(it);
         }
-    }
-    return true;
+    } catch (...) {}
 }
 
-// === DLL Exports ===
-
-WGC_API const char* GetLastErrorMsg()
-{
-    std::lock_guard<std::mutex> lock(g_errorMsgMutex);
-    return g_lastErrorMsg.c_str();
+WGC_API int GetFrameMapped(CaptureHandle h, unsigned char** data, int* w, int* h2, int* rowPitch) {
+    try {
+        if (!h) return 0;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        if (it == g_captures.end()) return 0;
+        return it->second->MapFrame(data, w, h2, rowPitch) ? 1 : 0;
+    } catch (...) { return 0; }
 }
 
-WGC_API int EnumerateWindows(char*** titles, char*** classNames, int* count)
-{
-    try
-    {
-        WindowEnumerator enumerator;
-        auto windows = enumerator.EnumerateVisibleWindows();
-
-        *count = static_cast<int>(windows.size());
-
-        if (windows.empty())
-        {
-            *titles = nullptr;
-            *classNames = nullptr;
-            return 1;
-        }
-
-        *titles = static_cast<char**>(CoTaskMemAlloc(sizeof(char*) * windows.size()));
-        *classNames = static_cast<char**>(CoTaskMemAlloc(sizeof(char*) * windows.size()));
-
-        for (size_t i = 0; i < windows.size(); i++)
-        {
-            std::string title = WStringToUTF8(windows[i].Title);
-            std::string className = WStringToUTF8(windows[i].ClassName);
-
-            (*titles)[i] = static_cast<char*>(CoTaskMemAlloc(title.size() + 1));
-            strcpy_s((*titles)[i], title.size() + 1, title.c_str());
-
-            (*classNames)[i] = static_cast<char*>(CoTaskMemAlloc(className.size() + 1));
-            strcpy_s((*classNames)[i], className.size() + 1, className.c_str());
-        }
-
-        return 1;
-    }
-    catch (...)
-    {
-        return 0;
-    }
+WGC_API void ReleaseMappedFrame(CaptureHandle h) {
+    try {
+        if (!h) return;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        if (it != g_captures.end()) it->second->ReleaseFrame();
+    } catch (...) {}
 }
 
-WGC_API void FreeStringArray(char** array, int count)
-{
-    if (!array) return;
-    for (int i = 0; i < count; i++)
-    {
-        if (array[i]) CoTaskMemFree(array[i]);
-    }
-    CoTaskMemFree(array);
+WGC_API void StopCapture(CaptureHandle h) {
+    try {
+        if (!h) return;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        if (it != g_captures.end()) it->second->StopContinuousCapture();
+    } catch (...) {}
 }
 
-WGC_API int StartContinuousCapture(const char* title, const char* className)
-{
-    try
-    {
-        std::lock_guard<std::mutex> lock(g_captureMutex);
-        SetLastErrorMsg("");
-
-        if (!EnsureWinRTInitialized())
-        {
-            SetLastErrorMsg("WinRT init failed");
-            return 0;
-        }
-
-        if (!EnsureCaptureInitialized()) return 0;
-
-        HWND hwnd = FindTargetWindow(title, className);
-        if (!hwnd)
-        {
-            SetLastErrorMsg("Window not found");
-            return 0;
-        }
-
-        if (!IsWindowVisible(hwnd))
-        {
-            SetLastErrorMsg("Window not visible");
-            return 0;
-        }
-
-        std::string err;
-        if (!g_capture->StartContinuousCapture(hwnd, &err))
-        {
-            SetLastErrorMsg("Start capture failed: " + err);
-            return 0;
-        }
-
-        return 1;
-    }
-    catch (...)
-    {
-        SetLastErrorMsg("Unknown exception");
-        return 0;
-    }
+WGC_API void PauseCapture(CaptureHandle h) {
+    if (!h) return;
+    std::lock_guard<std::mutex> lk(g_managerMutex);
+    auto it = g_captures.find(h);
+    if (it != g_captures.end()) it->second->PauseCapture();
 }
 
-WGC_API int GetLatestFrame(unsigned char** imageData, int* width, int* height)
-{
-    try
-    {
-        std::lock_guard<std::mutex> lock(g_captureMutex);
-
-        if (!g_capture || !g_capture->IsCapturing()) return 0;
-
-        unsigned char* data = nullptr;
-        int w = 0, h = 0;
-
-        if (!g_capture->TryGetFrame(&data, &w, &h)) return 0;
-
-        *imageData = data;
-        *width = w;
-        *height = h;
-
-        return 1;
-    }
-    catch (...)
-    {
-        return 0;
-    }
+WGC_API void ResumeCapture(CaptureHandle h) {
+    if (!h) return;
+    std::lock_guard<std::mutex> lk(g_managerMutex);
+    auto it = g_captures.find(h);
+    if (it != g_captures.end()) it->second->ResumeCapture();
 }
 
-WGC_API void FreeImageData(unsigned char* data)
-{
-    if (data) CoTaskMemFree(data);
+WGC_API int IsCapturing(CaptureHandle h) {
+    try {
+        if (!h) return 0;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        return (it != g_captures.end()) ? (it->second->IsCapturing() ? 1 : 0) : 0;
+    } catch (...) { return 0; }
 }
 
-WGC_API void StopContinuousCapture()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    if (g_capture) g_capture->StopContinuousCapture();
+WGC_API int IsPaused(CaptureHandle h) {
+    try {
+        if (!h) return 0;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        return (it != g_captures.end()) ? (it->second->IsPaused() ? 1 : 0) : 0;
+    } catch (...) { return 0; }
 }
 
-WGC_API int IsCapturing()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    return (g_capture && g_capture->IsCapturing()) ? 1 : 0;
+WGC_API int GetFrameCount(CaptureHandle h) {
+    try {
+        if (!h) return 0;
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto it = g_captures.find(h);
+        return (it != g_captures.end()) ? it->second->GetFrameCount() : 0;
+    } catch (...) { return 0; }
 }
 
-WGC_API int GetFrameCount()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    return g_capture ? g_capture->GetFrameCount() : 0;
-}
-
-// 新增：暂停/恢复捕获
-WGC_API void PauseCapture()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    if (g_capture) g_capture->PauseCapture();
-}
-
-WGC_API void ResumeCapture()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    if (g_capture) g_capture->ResumeCapture();
-}
-
-WGC_API int IsPaused()
-{
-    std::lock_guard<std::mutex> lock(g_captureMutex);
-    return (g_capture && g_capture->IsPaused()) ? 1 : 0;
+WGC_API size_t GetActiveCaptureCount() {
+    std::lock_guard<std::mutex> lk(g_managerMutex);
+    return g_captures.size();
 }
