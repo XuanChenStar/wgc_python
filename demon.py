@@ -6,8 +6,7 @@ from wgc_python import WindowCapture, enumerate_windows
 
 
 class CaptureWorker:
-    def __init__(self, title, cls, label):
-        self.label = label
+    def __init__(self, title, cls):
         self.cap = WindowCapture(title, cls)
         self.lock = threading.Lock()
         self.frame = None
@@ -71,7 +70,7 @@ def main():
 
     title, cls = target
     print(f"thread: [{cls}] {title}")
-    worker = CaptureWorker(title, cls, "崩坏3")
+    worker = CaptureWorker(title, cls)
     worker.start()
     time.sleep(0.5)
 

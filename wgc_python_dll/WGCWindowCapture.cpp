@@ -153,6 +153,12 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, bool clientAreaOnly, st
             texHeight = clientH;
         }
 
+        if (texWidth <= 0 || texHeight <= 0) {
+            setError("Window is minimized or has zero client area (client area "
+                     + std::to_string(texWidth) + "x" + std::to_string(texHeight) + ")");
+            return false;
+        }
+
         if (!CreateTextures(texWidth, texHeight)) { setError("Failed to create textures"); return false; }
 
         m_framePool = winrt::Direct3D11CaptureFramePool::CreateFreeThreaded(

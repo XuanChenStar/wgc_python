@@ -2,6 +2,10 @@
 
 English | [简体中文](README.md)
 
+[![PyPI](https://img.shields.io/pypi/v/wgc-python)](https://pypi.org/project/wgc-python/)
+[![Python](https://img.shields.io/pypi/pyversions/wgc-python)](https://pypi.org/project/wgc-python/)
+[![License](https://img.shields.io/pypi/l/wgc-python)](LICENSE)
+
 > **🚀 Window Capture Library Built for Python Automation**  
 > High Frame Rate · Zero-Resource Standby · Capture Behind Windows · Minimalist API
 
@@ -86,8 +90,10 @@ with WindowCapture("Window", "Class") as cap:
 
 ### Installation
 
+Published on PyPI — install directly with pip:
+
 ```bash
-pip install wgc-python
+pip install wgc_python
 ```
 
 ### Basic Usage

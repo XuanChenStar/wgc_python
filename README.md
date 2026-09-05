@@ -2,6 +2,10 @@
 
 [English](README_EN.md) | 简体中文
 
+[![PyPI](https://img.shields.io/pypi/v/wgc-python)](https://pypi.org/project/wgc-python/)
+[![Python](https://img.shields.io/pypi/pyversions/wgc-python)](https://pypi.org/project/wgc-python/)
+[![License](https://img.shields.io/pypi/l/wgc-python)](LICENSE)
+
 > **🚀 为 Python 自动化而生的窗口捕获库**  
 > 高帧率捕获 · 零资源待机 · 无视遮挡 · API 极简
 
@@ -87,8 +91,10 @@ with WindowCapture("窗口", "类名") as cap:
 
 ### 安装
 
+已发布至 PyPI，直接 pip 安装即可：
+
 ```bash
-pip install wgc-python
+pip install wgc_python
 ```
 
 ### 基础用法
