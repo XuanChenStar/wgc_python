@@ -3,7 +3,7 @@
 [English](README_EN.md) | 简体中文
 
 > **🚀 为 Python 自动化而生的窗口捕获库**  
-> 180+ FPS 极致性能 · 零资源待机 · 无视遮挡 · API 极简
+> 高帧率捕获 · 零资源待机 · 无视遮挡 · API 极简
 
 ---
 
@@ -17,7 +17,7 @@
 - **PrintWindow**：性能瓶颈，固定 26ms+ 延迟
 - **其他 WGC 封装**：持续运行占用资源，频繁启停开销巨大（50ms+）
 
-**wgc_python 通过独创的 Pause/Resume 机制，完美解决了这个矛盾：**
+**wgc_python 通过 Pause/Resume 机制解决了这个矛盾：**
 
 ```python
 # 传统方式：要么持续空转浪费资源，要么频繁启停承受延迟
@@ -39,18 +39,20 @@ with WindowCapture("窗口", "类名") as cap:
 |------|-----|---------|---------|-------------|----------------|
 | python-mss / BitBlt | ~60 | ❌ | 高 | 低 | N/A (无暂停概念) |
 | PrintWindow | ~38 | ✅ | 中 | 低 | N/A (每次调用即捕获) |
-| 其他 WGC 封装 | 180+ | ✅ | 高（持续空转） | 极高 (50ms+) | 高 (无法真正暂停) |
-| **wgc_python** | **180+** | ✅ | **极低（Pause时归零）** | **<1μs（原子标志位）** | **归零（无 D3D 操作）** |
+| 其他 WGC 封装 | 高 | ✅ | 高（持续空转） | 高 (启停会话开销大) | 高 (无法真正暂停) |
+| **wgc_python** | **高** | ✅ | **极低（Pause时归零）** | **极低（原子标志位）** | **归零（无 D3D 操作）** |
+
+> 表中为定性对比，具体数值因硬件、窗口内容与场景而异，建议以自己的实测为准。
 
 ### ✨ 核心优势
 
-#### 1. 极致性能
-- **180+ FPS** 高帧率捕获，比 PrintWindow 快 5 倍
+#### 1. 高帧率
+- WGC 直接捕获 GPU 合成输出，不逐帧截屏，帧率上限远高于 PrintWindow 等 GDI 方案
 - **双缓冲 Staging 纹理**：GPU 异步拷贝，读写互不阻塞
 - **零拷贝友好**：`np.ndarray(strides=...)` 直接从 GPU 映射内存构造视图
 
 #### 2. 智能资源管理
-- **Pause/Resume <1μs 软暂停**：不销毁不重建 WGC session，仅原子标志位跳过帧处理
+- **Pause/Resume 软暂停**：不销毁不重建 WGC session，仅原子标志位跳过帧处理
 - **capture_one() 自动管理**：Resume → 等待帧 → 拷贝 → Pause，间隙 GPU 驱动零开销
 - **会话复用**：避免频繁创建/销毁 D3D 设备的开销
 
@@ -70,7 +72,12 @@ with WindowCapture("窗口", "类名") as cap:
 - DPI 感知：自动修正高 DPI 缩放偏移，裁剪精度像素级
 - GPU 级裁剪：`CopySubresourceRegion` 在 GPU 上完成裁剪，不浪费带宽和 CPU
 
-#### 6. 无视遮挡
+#### 6. 光标捕获开关
+- **默认 `capture_cursor=True`**：画面包含鼠标光标，与常规录屏行为一致
+- **设置 `capture_cursor=False`**：画面不含鼠标指针，适合自动化 / 数据采集场景（也可用 `set_cursor_capture_enabled()` 运行时切换）
+- 需 Windows 10 2004 (19041) 及以上系统，旧系统自动忽略该选项
+
+#### 7. 无视遮挡
 - 支持捕获被遮挡、最小化、后台窗口
 - 完美适配游戏、桌面应用等各种场景
 
@@ -107,6 +114,12 @@ frame_client = cap_client.capture_one()  # 只有编辑区
 frame_full  = cap_full.capture_one()    # 含标题栏 + 菜单 + 编辑区
 cap_client.close()
 cap_full.close()
+
+# 不捕获鼠标光标（默认 capture_cursor=True，保持旧版行为）
+cap = WindowCapture("记事本", "Notepad", capture_cursor=False)
+frame = cap.capture_one()               # 画面不含鼠标指针
+cap.set_cursor_capture_enabled(True)    # 也支持运行时切换
+cap.close()
 ```
 
 ### 自动化最佳实践
@@ -175,7 +188,7 @@ from wgc_python import (
 )
 
 # WindowCapture 类方法:
-#   cap = WindowCapture(title, class_name, client_area_only=True)
+#   cap = WindowCapture(title, class_name, client_area_only=True, capture_cursor=True)
 #
 #   cap.capture_one(timeout=0.5)  -> np.ndarray | None  ★ 推荐
 #      自动 Resume → 等待帧 → 拷贝为 numpy → Pause
@@ -185,6 +198,7 @@ from wgc_python import (
 #   cap.release_frame()           # 释放 GPU 映射
 #   cap.pause()                   # 暂停捕获（零资源待机）
 #   cap.resume()                  # 恢复捕获
+#   cap.set_cursor_capture_enabled(enabled)  # 运行时切换光标捕获
 #   cap.stop()                    # 停止帧到达
 #   cap.close()                   # 销毁会话
 #   cap.is_capturing()  -> bool
@@ -234,7 +248,7 @@ WGC捕获 → GPU Surface纹理
 ```
   用户调用 cap.pause()
          │
-    m_isPaused = true   ◄──── 原子标志位，<1μs
+    m_isPaused = true   ◄──── 原子标志位，微秒级
     m_readableStagingIndex = -1
          │
     ┌────▼────────────────────────────────────────────┐
@@ -272,7 +286,7 @@ wgc_python/
 │   ├── pch.h                     # 预编译头
 │   └── packages/                 # NuGet 包
 ├── test.py                       # 功能测试
-├── test_mt.py                    # 多线程按需捕获示例
+├── demon.py                      # 多线程实时显示示例
 ├── pyproject.toml                # pip 构建配置
 ├── BUILD.md / BUILD_EN.md        # 构建说明（中/英）
 ├── README.md / README_EN.md      # 使用文档（中/英）
@@ -286,8 +300,8 @@ wgc_python/
 
 ## 系统要求
 
-- Windows 10 1903+ (Build 18362)
-- Python 3.6+
+- Windows 10 1903+ (Build 18362)，光标捕获开关需 2004+ (Build 19041)
+- Python 3.8+
 
 ---
 

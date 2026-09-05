@@ -3,7 +3,7 @@
 English | [简体中文](README.md)
 
 > **🚀 Window Capture Library Built for Python Automation**  
-> 180+ FPS Performance · Zero-Resource Standby · Capture Behind Windows · Minimalist API
+> High Frame Rate · Zero-Resource Standby · Capture Behind Windows · Minimalist API
 
 ---
 
@@ -17,7 +17,7 @@ Are you struggling with these problems?
 - **PrintWindow**: Performance bottleneck, fixed 26ms+ latency
 - **Other WGC wrappers**: Continuous resource consumption, huge overhead for frequent start/stop (50ms+)
 
-**wgc_python solves this dilemma with its innovative Pause/Resume mechanism:**
+**wgc_python solves this dilemma with its Pause/Resume mechanism:**
 
 ```python
 # Traditional approach: Either waste resources or suffer latency
@@ -38,18 +38,20 @@ with WindowCapture("Window", "Class") as cap:
 |----------|-----|-------------------|-----------|----------------|-----------------|
 | python-mss / BitBlt | ~60 | ❌ | High | Low | N/A (no pause) |
 | PrintWindow | ~38 | ✅ | Medium | Low | N/A (per-call) |
-| Other WGC wrappers | 180+ | ✅ | High (continuous) | Very High (50ms+) | High (can't truly pause) |
-| **wgc_python** | **180+** | ✅ | **Near Zero (when paused)** | **<1μs (atomic flag)** | **Zero (no D3D ops)** |
+| Other WGC wrappers | High | ✅ | High (continuous) | High (session start/stop) | High (can't truly pause) |
+| **wgc_python** | **High** | ✅ | **Near Zero (when paused)** | **Very Low (atomic flag)** | **Zero (no D3D ops)** |
+
+> Qualitative comparison only; actual numbers vary by hardware, window content, and workload — benchmark on your own setup.
 
 ### ✨ Core Advantages
 
-#### 1. Extreme Performance
-- **180+ FPS** high frame rate capture, 5x faster than PrintWindow
+#### 1. High Frame Rate
+- WGC captures GPU composition output directly instead of per-frame GDI screenshots — frame rate ceiling far above PrintWindow-style approaches
 - **Double-buffered Staging Texture**: GPU async copy, read/write non-blocking
 - **Zero-copy path**: `np.ndarray(strides=...)` directly from GPU-mapped memory
 
 #### 2. Smart Resource Management
-- **Pause/Resume <1μs soft-pause**: Atomic flag only, no WGC session teardown
+- **Pause/Resume soft-pause**: Atomic flag only, no WGC session teardown
 - **capture_one() auto management**: Resume → wait → copy → Pause, zero GPU driver overhead between captures
 - **Session Reuse**: No frequent D3D device creation/destruction
 
@@ -69,7 +71,12 @@ with WindowCapture("Window", "Class") as cap:
 - DPI-aware: automatic high-DPI scaling correction for pixel-perfect cropping
 - GPU-level cropping via `CopySubresourceRegion`, no wasted bandwidth or CPU
 
-#### 6. Capture Behind Windows
+#### 6. Cursor Capture Toggle
+- **Default `capture_cursor=True`**: frame includes the mouse cursor, same as typical screen recording
+- **Set `capture_cursor=False`**: frame excludes the mouse pointer, ideal for automation / data collection (also toggleable at runtime via `set_cursor_capture_enabled()`)
+- Requires Windows 10 2004 (19041) or later; silently ignored on older systems
+
+#### 7. Capture Behind Windows
 - Supports capturing occluded, minimized, and background windows
 - Perfect for games, desktop apps, and various scenarios
 
@@ -106,6 +113,12 @@ frame_client = cap_client.capture_one()  # edit area only
 frame_full  = cap_full.capture_one()    # title bar + menu + edit area
 cap_client.close()
 cap_full.close()
+
+# Disable mouse cursor capture (default capture_cursor=True, same as previous versions)
+cap = WindowCapture("Notepad", "Notepad", capture_cursor=False)
+frame = cap.capture_one()               # frame does not contain the mouse pointer
+cap.set_cursor_capture_enabled(True)    # runtime toggle is also supported
+cap.close()
 ```
 
 ### Best Practice for Automation
@@ -174,7 +187,7 @@ from wgc_python import (
 )
 
 # WindowCapture methods:
-#   cap = WindowCapture(title, class_name, client_area_only=True)
+#   cap = WindowCapture(title, class_name, client_area_only=True, capture_cursor=True)
 #
 #   cap.capture_one(timeout=0.5)  -> np.ndarray | None  ★ recommended
 #      Auto Resume → wait for frame → copy to numpy → Pause
@@ -184,6 +197,7 @@ from wgc_python import (
 #   cap.release_frame()           # Release GPU mapping
 #   cap.pause()                   # Pause capture (zero-resource standby)
 #   cap.resume()                  # Resume capture
+#   cap.set_cursor_capture_enabled(enabled)  # Toggle cursor capture at runtime
 #   cap.stop()                    # Stop frame arrival
 #   cap.close()                   # Destroy session
 #   cap.is_capturing()  -> bool
@@ -233,7 +247,7 @@ WGC Capture → GPU Surface Texture
 ```
   User calls cap.pause()
          │
-    m_isPaused = true   ◄──── atomic flag, <1μs
+    m_isPaused = true   ◄──── atomic flag, microsecond-level
     m_readableStagingIndex = -1
          │
     ┌────▼────────────────────────────────────────────┐
@@ -271,7 +285,7 @@ wgc_python/
 │   ├── pch.h                     # Precompiled header
 │   └── packages/                 # NuGet packages
 ├── test.py                       # Functional tests
-├── test_mt.py                    # Multi-threaded on-demand capture example
+├── demon.py                      # Threaded realtime display example
 ├── pyproject.toml                # pip build config
 ├── BUILD.md / BUILD_EN.md        # Build instructions (CN/EN)
 ├── README.md / README_EN.md      # Usage docs (CN/EN)
@@ -286,6 +300,13 @@ wgc_python/
 ## Build DLL
 
 See [BUILD.md](BUILD.md)
+
+---
+
+## Requirements
+
+- Windows 10 1903+ (Build 18362); cursor capture toggle requires 2004+ (Build 19041)
+- Python 3.8+
 
 ---
 

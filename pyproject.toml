@@ -5,7 +5,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "wgc-python"
 version = "2.0.0"
-description = "极致性能的 Windows Graphics Capture 库 — 零拷贝 GPU→Python，按需捕获零开销待机"
+description = "Windows Graphics Capture 窗口捕获库 — BGRA numpy 帧、按需捕获、零拷贝 GPU 路径"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
