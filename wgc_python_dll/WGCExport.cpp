@@ -109,6 +109,13 @@ WGC_API CaptureHandle StartCapture(const char* title, const char* className, int
     } catch (...) { SetError("Exception"); return 0; }
 }
 
+WGC_API void SetCursorCaptureEnabled(CaptureHandle h, int enabled) {
+    if (!h) return;
+    std::lock_guard<std::mutex> lk(g_managerMutex);
+    auto it = g_captures.find(h);
+    if (it != g_captures.end()) it->second->SetCursorCaptureEnabled(enabled != 0);
+}
+
 WGC_API void DestroyCapture(CaptureHandle h) {
     try {
         if (!h) return;

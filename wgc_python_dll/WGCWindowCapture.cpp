@@ -7,6 +7,7 @@
 #include "pch.h"
 #include "WGCWindowCapture.h"
 #include <sstream>
+#include <winrt/Windows.Foundation.Metadata.h>
 
 namespace
 {
@@ -159,6 +160,7 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, bool clientAreaOnly, st
         if (!m_framePool) { setError("Failed to create frame pool"); return false; }
 
         m_session = m_framePool.CreateCaptureSession(m_captureItem);
+        ApplyCursorCaptureSetting();
 
         m_frameArrivedAlive = std::make_shared<std::atomic<bool>>(true);
         auto alive = m_frameArrivedAlive;
@@ -244,6 +246,25 @@ void WGCWindowCapture::ResumeCapture()
 {
     std::lock_guard<std::mutex> lock(m_frameMutex);
     m_isPaused.store(false);
+}
+
+void WGCWindowCapture::SetCursorCaptureEnabled(bool enabled)
+{
+    m_captureCursor = enabled;
+    ApplyCursorCaptureSetting();
+}
+
+// IsCursorCaptureEnabled 需要 Windows 10 2004 (19041)+，低版本系统静默跳过
+void WGCWindowCapture::ApplyCursorCaptureSetting()
+{
+    if (!m_session) return;
+    try {
+        if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsCursorCaptureEnabled"))
+        {
+            m_session.IsCursorCaptureEnabled(m_captureCursor);
+        }
+    } catch (...) {}
 }
 
 void WGCWindowCapture::StopContinuousCapture()

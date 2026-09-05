@@ -29,6 +29,7 @@ public:
     void StopContinuousCapture();
     bool MapFrame(unsigned char** outData, int* outWidth, int* outHeight, int* outRowPitch = nullptr);
     void ReleaseFrame();
+    void SetCursorCaptureEnabled(bool enabled);
     
     bool IsCapturing() const { return m_isCapturing; }
     int GetFrameCount() const { return m_frameCount.load(); }
@@ -65,6 +66,7 @@ private:
     int m_sourceWidth = 0;
     int m_sourceHeight = 0;
     bool m_clientAreaOnly = false;
+    bool m_captureCursor = true;
     
     std::atomic<int> m_frameCount{0};
     std::atomic<bool> m_isCapturing{false};
@@ -73,4 +75,5 @@ private:
     
     bool CreateTextures(UINT width, UINT height);
     void CalcClientRectOffset(HWND hwnd, int& offsetX, int& offsetY, int& clientW, int& clientH);
+    void ApplyCursorCaptureSetting();
 };

@@ -1,6 +1,7 @@
 """
-wgc-python - 极致性能的 Windows Graphics Capture 库
-支持多线程多窗口并发捕获、客户区裁剪
+wgc-python — 基于 Windows Graphics Capture 的 Python 窗口捕获库
+
+支持多窗口并发捕获、客户区裁剪、按需捕获（Pause/Resume）、关闭光标捕获。
 
 Copyright (c) 2026 XuanChenxuan
 MIT License — see LICENSE file for details
@@ -15,6 +16,9 @@ _dll = ctypes.CDLL(os.path.join(os.path.dirname(__file__), 'wgc_python.dll'))
 
 _dll.StartCapture.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
 _dll.StartCapture.restype = ctypes.c_uint64
+if hasattr(_dll, 'SetCursorCaptureEnabled'):
+    _dll.SetCursorCaptureEnabled.argtypes = [ctypes.c_uint64, ctypes.c_int]
+    _dll.SetCursorCaptureEnabled.restype = None
 _dll.DestroyCapture.argtypes = [ctypes.c_uint64]
 _dll.GetFrameMapped.argtypes = [ctypes.c_uint64, ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),
                                 ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
@@ -33,7 +37,7 @@ _dll.GetFrameCount.restype = ctypes.c_int
 _dll.GetActiveCaptureCount.restype = ctypes.c_size_t
 _dll.GetLastErrorMsg.restype = ctypes.c_char_p
 _dll.EnumerateWindows.argtypes = [ctypes.POINTER(ctypes.POINTER(ctypes.c_char_p)),
-                                   ctypes.POINTER(ctypes.POINTER(ctypes.c_char_p)), ctypes.POINTER(ctypes.c_int)]
+                                ctypes.POINTER(ctypes.POINTER(ctypes.c_char_p)), ctypes.POINTER(ctypes.c_int)]
 _dll.EnumerateWindows.restype = ctypes.c_int
 _dll.FreeStringArray.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.c_int]
 
@@ -63,38 +67,30 @@ def get_active_capture_count() -> int:
 
 class WindowCapture:
     """窗口捕获类 - 支持多线程多窗口并发捕获
-    
+
     Args:
         title: 窗口标题
         class_name: 窗口类名
-        client_area_only: 是否只捕获客户区（不含标题栏/边框），默认True
-    
-    使用示例:
-        # 只捕获客户区（推荐）
-        with WindowCapture("记事本", "Notepad") as cap:
-            frame = cap.get_frame()
-        
-        # 捕获整个窗口（含标题栏）
-        with WindowCapture("记事本", "Notepad", client_area_only=False) as cap:
-            frame = cap.get_frame()
+        client_area_only: 只捕获客户区（不含标题栏/边框），默认 True
+        capture_cursor: 是否捕获鼠标光标，默认 True（需 Windows 10 2004+，旧系统自动忽略）
     """
-    
-    def __init__(self, title: str, class_name: str, client_area_only: bool = True):
+
+    def __init__(self, title: str, class_name: str, client_area_only: bool = True,
+                 capture_cursor: bool = True):
         self._h = _dll.StartCapture(title.encode(), class_name.encode(), int(client_area_only))
         if not self._h:
             raise RuntimeError(get_last_error())
+        if not capture_cursor and hasattr(_dll, 'SetCursorCaptureEnabled'):
+            _dll.SetCursorCaptureEnabled(self._h, 0)
     
     def __del__(self): self.close()
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
     
     def get_frame(self) -> Optional[Tuple[int, int, int, int]]:
-        """返回 (data_ptr, w, h, row_pitch) — 零拷贝！
+        """返回 (data_ptr, w, h, row_pitch) — 零拷贝 GPU 映射内存。
 
-        data_ptr 直接指向 GPU 永久映射内存，无拷贝。
-        调用者必须在使用完后调用 release_frame()。
-        未调用 release_frame() 前不要再次调用。
-        """
+        用完必须调用 release_frame()，期间不要再次调用。"""
         if not self._h: return None
         data = ctypes.POINTER(ctypes.c_ubyte)()
         w, h, rp = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
@@ -113,6 +109,11 @@ class WindowCapture:
     
     def resume(self):
         if self._h: _dll.ResumeCapture(self._h)
+
+    def set_cursor_capture_enabled(self, enabled: bool):
+        """运行时切换是否捕获鼠标光标"""
+        if self._h and hasattr(_dll, 'SetCursorCaptureEnabled'):
+            _dll.SetCursorCaptureEnabled(self._h, int(enabled))
     
     def is_capturing(self) -> bool:
         return bool(self._h and _dll.IsCapturing(self._h))
@@ -129,17 +130,9 @@ class WindowCapture:
             self._h = 0
     
     def capture_one(self, timeout: float = 0.5) -> Optional[np.ndarray]:
-        """按需捕获一帧 —— 推荐用法
-        
-        Auto Pause/Resume，WGC 在捕获间隙完全休眠（GPU 驱动零开销）。
-        线程通过 sleep 等待下一帧到达，不忙轮询。
-        
-        Args:
-            timeout: 等待帧的超时秒数（默认 0.5）
-        
-        Returns:
-            BGRA numpy 数组，shape (h, w, 4)，超时返回 None
-        """
+        """按需捕获一帧：Resume → 等待帧 → 拷贝 → Pause，捕获间隙零开销。
+
+        返回 BGRA numpy 数组 (h, w, 4)，超时返回 None。"""
         self.resume()
         deadline = time.perf_counter() + timeout
         while time.perf_counter() < deadline:
@@ -153,8 +146,8 @@ class WindowCapture:
 
         ptr, w, h, rp = r
         arr = np.ndarray((h, w, 4), dtype=np.uint8,
-                         buffer=(ctypes.c_ubyte * (h * rp)).from_address(ptr),
-                         strides=(rp, 4, 1))
+                        buffer=(ctypes.c_ubyte * (h * rp)).from_address(ptr),
+                        strides=(rp, 4, 1))
         frame = arr.copy()
         self.release_frame()
         self.pause()
