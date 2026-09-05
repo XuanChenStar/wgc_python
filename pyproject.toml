@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wgc_python"
-version = "2.0.0"
+version = "2.0.1"
 description = "Windows Graphics Capture 窗口捕获库 — BGRA numpy 帧、按需捕获、零拷贝 GPU 路径"
 readme = "README.md"
 requires-python = ">=3.8"
