@@ -26,6 +26,8 @@ public:
     void Cleanup();
 
     bool StartContinuousCapture(HWND hwnd, bool clientAreaOnly, std::string* outError = nullptr);
+    // 捕获目标窗口所在显示器的全部内容（捕获会话绑定显示器，不随目标窗口全屏/窗口切换失效）
+    bool StartContinuousCaptureMonitor(HMONITOR hmon, std::string* outError = nullptr);
     void StopContinuousCapture();
     bool MapFrame(unsigned char** outData, int* outWidth, int* outHeight, int* outRowPitch = nullptr);
     void ReleaseFrame();
@@ -75,5 +77,10 @@ private:
     
     bool CreateTextures(UINT width, UINT height);
     void CalcClientRectOffset(HWND hwnd, int& offsetX, int& offsetY, int& clientW, int& clientH);
+    bool StartContinuousCaptureCommon(
+        winrt::GraphicsCaptureItem const& item,
+        HWND hwnd,
+        bool clientAreaOnly,
+        std::string* outError = nullptr);
     void ApplyCursorCaptureSetting();
 };

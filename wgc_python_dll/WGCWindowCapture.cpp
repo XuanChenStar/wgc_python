@@ -132,11 +132,56 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, bool clientAreaOnly, st
     if (m_isCapturing) StopContinuousCapture();
 
     try {
-        m_captureItem = util::CreateCaptureItemForWindow(hwnd);
-        if (!m_captureItem) { setError("Failed to create capture item"); return false; }
+        auto item = util::CreateCaptureItemForWindow(hwnd);
+        if (!item) { setError("Failed to create capture item"); return false; }
+        return StartContinuousCaptureCommon(item, hwnd, clientAreaOnly, outError);
+    } catch (const winrt::hresult_error& e) {
+        std::stringstream ss;
+        ss << "Start capture failed: " << winrt::to_string(e.message()) << " (HRESULT: " << HResultToString(e.code()) << ")";
+        setError(ss.str());
+        return false;
+    } catch (...) {
+        setError("Unknown exception");
+        return false;
+    }
+}
 
-        auto size = m_captureItem.Size();
-        if (size.Width <= 0 || size.Height <= 0) { setError("Invalid window size"); return false; }
+bool WGCWindowCapture::StartContinuousCaptureMonitor(HMONITOR hmon, std::string* outError)
+{
+    auto setError = [&](const std::string& msg) { if (outError) *outError = msg; };
+
+    if (!m_initialized) { setError("Not initialized"); return false; }
+    if (m_isCapturing) StopContinuousCapture();
+
+    try {
+        auto item = util::CreateCaptureItemForMonitor(hmon);
+        if (!item) { setError("Failed to create capture item"); return false; }
+        // 显示器捕获始终取全屏内容（无客户区裁剪语义，m_clientAreaOnly=false）
+        return StartContinuousCaptureCommon(item, nullptr, false, outError);
+    } catch (const winrt::hresult_error& e) {
+        std::stringstream ss;
+        ss << "Start monitor capture failed: " << winrt::to_string(e.message()) << " (HRESULT: " << HResultToString(e.code()) << ")";
+        setError(ss.str());
+        return false;
+    } catch (...) {
+        setError("Unknown exception");
+        return false;
+    }
+}
+
+bool WGCWindowCapture::StartContinuousCaptureCommon(
+    winrt::GraphicsCaptureItem const& item,
+    HWND hwnd,
+    bool clientAreaOnly,
+    std::string* outError)
+{
+    auto setError = [&](const std::string& msg) { if (outError) *outError = msg; };
+
+    try {
+        if (!item) { setError("Invalid capture item"); return false; }
+
+        auto size = item.Size();
+        if (size.Width <= 0 || size.Height <= 0) { setError("Invalid capture item size"); return false; }
 
         m_sourceWidth = static_cast<int>(size.Width);
         m_sourceHeight = static_cast<int>(size.Height);
@@ -147,6 +192,7 @@ bool WGCWindowCapture::StartContinuousCapture(HWND hwnd, bool clientAreaOnly, st
         int texHeight = m_sourceHeight;
 
         if (clientAreaOnly) {
+            if (!hwnd) { setError("Client-area capture requires a window handle"); return false; }
             int clientW, clientH;
             CalcClientRectOffset(hwnd, m_cropX, m_cropY, clientW, clientH);
             texWidth = clientW;

@@ -145,6 +145,21 @@ while True:
 cap.close()
 ```
 
+### 显示器捕获（推荐全屏游戏场景使用）
+
+捕获目标窗口**所在的显示器**而非窗口本身：捕获会话绑定显示器，**目标窗口在全屏/窗口之间切换不会使捕获会话失效**（窗口捕获模式下此场景会冻结于最后一帧）。
+
+```python
+from wgc_python import WindowCaptureMonitor
+
+# 定位目标窗口所在的显示器并捕获其全部内容（无客户区裁剪）
+cap = WindowCaptureMonitor("游戏窗口", "UnityWndClass")
+frame = cap.capture_one()   # 整屏 BGRA 帧
+cap.close()
+```
+
+适用场景：全屏游戏的长期自动化采集、目标窗口显示模式频繁变化的场景。需要裁剪客户区或排除其他窗口内容时，仍请使用 `WindowCapture`。
+
 ### 零拷贝高级用法
 
 ```python

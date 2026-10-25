@@ -109,6 +109,29 @@ WGC_API CaptureHandle StartCapture(const char* title, const char* className, int
     } catch (...) { SetError("Exception"); return 0; }
 }
 
+WGC_API CaptureHandle StartCaptureMonitorOfWindow(const char* title, const char* className) {
+    try {
+        SetError("");
+        if (!InitWinRT()) { SetError("WinRT init failed"); return 0; }
+        HWND h = FindWnd(title, className);
+        if (!h) { SetError("Window not found"); return 0; }
+        // 捕获目标窗口所在显示器（会话桌面）：捕获会话绑定显示器，
+        // 不随目标窗口全屏/窗口切换失效
+        HMONITOR hmon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+        if (!hmon) { SetError("Monitor not found"); return 0; }
+
+        auto cap = std::make_unique<WGCWindowCapture>();
+        std::string err;
+        if (!cap->Initialize(&err)) { SetError("Init failed: " + err); return 0; }
+        if (!cap->StartContinuousCaptureMonitor(hmon, &err)) { SetError("Start failed: " + err); return 0; }
+        
+        std::lock_guard<std::mutex> lk(g_managerMutex);
+        auto handle = g_nextHandle.fetch_add(1);
+        g_captures[handle] = std::move(cap);
+        return handle;
+    } catch (...) { SetError("Exception"); return 0; }
+}
+
 WGC_API void SetCursorCaptureEnabled(CaptureHandle h, int enabled) {
     if (!h) return;
     std::lock_guard<std::mutex> lk(g_managerMutex);

@@ -37,6 +37,7 @@
 namespace util
 {
     using robmikh::common::desktop::CreateCaptureItemForWindow;
+    using robmikh::common::desktop::CreateCaptureItemForMonitor;
 
     inline winrt::com_ptr<ID3D11Device> CreateD3D11Device()
     {

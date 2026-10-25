@@ -144,6 +144,21 @@ while True:
 cap.close()
 ```
 
+### Monitor Capture (recommended for fullscreen game scenarios)
+
+Captures the **entire monitor where the target window resides** instead of the window itself: the capture session is bound to the monitor, so **the target window switching between fullscreen and windowed modes does NOT invalidate the capture session** (window capture mode freezes on the last frame in this scenario).
+
+```python
+from wgc_python import WindowCaptureMonitor
+
+# Locate the monitor containing the target window and capture its full content (no client-area cropping)
+cap = WindowCaptureMonitor("Game Window", "UnityWndClass")
+frame = cap.capture_one()   # full-screen BGRA frame
+cap.close()
+```
+
+Use cases: long-running automation over fullscreen games, scenarios where the target window's display mode changes frequently. Use `WindowCapture` instead when you need client-area cropping or to exclude other windows' content.
+
 ### Zero-Copy Advanced Usage
 
 ```python

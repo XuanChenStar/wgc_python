@@ -24,6 +24,7 @@ WGC_API int EnumerateWindows(char*** titles, char*** classNames, int* count);
 WGC_API void FreeStringArray(char** array, int count);
 
 WGC_API CaptureHandle StartCapture(const char* title, const char* className, int clientAreaOnly);
+WGC_API CaptureHandle StartCaptureMonitorOfWindow(const char* title, const char* className);
 WGC_API void SetCursorCaptureEnabled(CaptureHandle handle, int enabled);
 WGC_API void DestroyCapture(CaptureHandle handle);
 WGC_API int GetFrameMapped(CaptureHandle handle, unsigned char** imageData, int* width, int* height, int* rowPitch);

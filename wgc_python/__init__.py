@@ -157,4 +157,65 @@ class WindowCapture:
     def handle(self) -> int: return self._h
 
 
-__all__ = ['WindowCapture', 'enumerate_windows', 'get_last_error', 'get_active_capture_count']
+class WindowCaptureMonitor:
+    """显示器捕获类 - 捕获目标窗口所在显示器的全部内容
+
+    捕获会话绑定显示器而非窗口：目标窗口全屏/窗口切换不会使会话失效
+    （窗口捕获模式会在此时冻结于最后一帧）。仅捕获屏幕内容，无客户区裁剪。
+
+    Args:
+        title: 目标窗口标题（用于定位其所在显示器）
+        class_name: 目标窗口类名
+    """
+
+    def __init__(self, title: str, class_name: str):
+        self._h = _dll.StartCaptureMonitorOfWindow(title.encode(), class_name.encode())
+        if not self._h:
+            raise RuntimeError(get_last_error())
+    
+    def __del__(self): self.close()
+    def __enter__(self): return self
+    def __exit__(self, *_): self.close()
+    
+    def get_frame(self) -> Optional[Tuple[int, int, int, int]]:
+        """返回 (data_ptr, w, h, row_pitch) — 零拷贝 GPU 映射内存。
+
+        用完必须调用 release_frame()，期间不要再次调用。"""
+        if not self._h: return None
+        data = ctypes.POINTER(ctypes.c_ubyte)()
+        w, h, rp = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        if _dll.GetFrameMapped(self._h, ctypes.byref(data), ctypes.byref(w), ctypes.byref(h), ctypes.byref(rp)) == 0:
+            return None
+        return (ctypes.cast(data, ctypes.c_void_p).value, w.value, h.value, rp.value)
+
+    def release_frame(self):
+        if self._h: _dll.ReleaseMappedFrame(self._h)
+    
+    def stop(self):
+        if self._h: _dll.StopCapture(self._h)
+    
+    def pause(self):
+        if self._h: _dll.PauseCapture(self._h)
+    
+    def resume(self):
+        if self._h: _dll.ResumeCapture(self._h)
+    
+    def is_capturing(self) -> bool:
+        return bool(self._h and _dll.IsCapturing(self._h))
+    
+    def is_paused(self) -> bool:
+        return bool(self._h and _dll.IsPaused(self._h))
+    
+    def get_frame_count(self) -> int:
+        return _dll.GetFrameCount(self._h) if self._h else 0
+    
+    def close(self):
+        if self._h:
+            _dll.DestroyCapture(self._h)
+            self._h = 0
+    
+    @property
+    def handle(self) -> int: return self._h
+
+
+__all__ = ['WindowCapture', 'WindowCaptureMonitor', 'enumerate_windows', 'get_last_error', 'get_active_capture_count']
