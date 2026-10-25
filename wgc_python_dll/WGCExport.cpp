@@ -124,6 +124,9 @@ WGC_API CaptureHandle StartCaptureMonitorOfWindow(const char* title, const char*
         std::string err;
         if (!cap->Initialize(&err)) { SetError("Init failed: " + err); return 0; }
         if (!cap->StartContinuousCaptureMonitor(hmon, &err)) { SetError("Start failed: " + err); return 0; }
+        // 自动化坐标不应受鼠标光标干扰（与窗口捕获的 capture_cursor=false 同语义）；
+        // 需 Win10 2004+，低版本静默跳过（光标会保留在帧中）
+        cap->SetCursorCaptureEnabled(false);
         
         std::lock_guard<std::mutex> lk(g_managerMutex);
         auto handle = g_nextHandle.fetch_add(1);
