@@ -183,6 +183,7 @@ bool WGCWindowCapture::StartContinuousCaptureCommon(
         auto size = item.Size();
         if (size.Width <= 0 || size.Height <= 0) { setError("Invalid capture item size"); return false; }
 
+        m_captureItem = item;
         m_sourceWidth = static_cast<int>(size.Width);
         m_sourceHeight = static_cast<int>(size.Height);
         m_clientAreaOnly = clientAreaOnly;
